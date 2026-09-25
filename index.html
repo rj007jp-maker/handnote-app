@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>てがきノート</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{
+  --paper:#FAF6EC; --paper-dark:#F0E9D8; --line:#D9CEB8; --sidebar:#EFE6D3;
+  --ink:#20233F; --ink-blue:#33518F; --ink-red:#9C3B3B; --text:#2B2A26;
+  --muted:#8A8270; --card:#FFFDF6; --accent:#33518F;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root:not([data-theme="light"]){ }
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#26241C; --paper-dark:#2C2A21; --line:#3A3728; --sidebar:#1D1B15;
+    --ink:#E8E6DC; --ink-blue:#8FB1E8; --ink-red:#E29494; --text:#EDE9DC;
+    --muted:#8C8770; --card:#2C2A21; --accent:#8FB1E8;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#26241C; --paper-dark:#2C2A21; --line:#3A3728; --sidebar:#1D1B15;
+  --ink:#E8E6DC; --ink-blue:#8FB1E8; --ink-red:#E29494; --text:#EDE9DC;
+  --muted:#8C8770; --card:#2C2A21; --accent:#8FB1E8;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{
+  background:var(--sidebar); color:var(--text); font-family:'Kalam',system-ui,sans-serif;
+  display:flex; height:100%; overflow:hidden;
+}
+#sidebar{
+  width:220px; min-width:180px; background:var(--sidebar); border-right:1px solid var(--line);
+  display:flex; flex-direction:column; padding:calc(14px + env(safe-area-inset-top,0px)) 12px 12px;
+  overflow-y:auto;
+}
+#sidebar h1{font-size:1.3rem; margin:0 0 12px 4px; font-weight:700; color:var(--ink);}
+#newNoteBtn{
+  background:var(--card); border:1.5px dashed var(--muted); color:var(--text);
+  font-family:inherit; font-size:0.95rem; padding:10px; border-radius:6px; cursor:pointer;
+  margin-bottom:10px; transition:background .15s;
+}
+#newNoteBtn:hover{background:var(--paper-dark);}
+#noteList{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px;}
+.note-item{
+  background:var(--card); border-radius:6px; padding:8px 10px; cursor:pointer;
+  border:1.5px solid transparent; display:flex; align-items:center; gap:8px;
+  box-shadow:0 1px 2px rgba(0,0,0,.08);
+}
+.note-item.active{border-color:var(--accent);}
+.note-item img{width:44px; height:32px; object-fit:cover; border-radius:3px; background:var(--paper); flex-shrink:0;}
+.note-item .meta{flex:1; min-width:0;}
+.note-item .title{font-size:0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.note-item .date{font-size:0.7rem; color:var(--muted); font-family:system-ui,sans-serif;}
+.note-item .del{background:none; border:none; color:var(--muted); cursor:pointer; font-size:1rem; padding:2px 4px; border-radius:4px;}
+.note-item .del:hover{color:var(--ink-red); background:var(--paper-dark);}
+
+#main{flex:1; display:flex; flex-direction:column; min-width:0;}
+#toolbar{
+  display:flex; align-items:center; gap:10px; padding:10px 16px;
+  padding-top:calc(10px + env(safe-area-inset-top,0px));
+  background:var(--paper-dark); border-bottom:1px solid var(--line); flex-wrap:wrap;
+}
+#titleInput{
+  font-family:'Kalam',sans-serif; font-size:1.1rem; font-weight:700; color:var(--ink);
+  background:transparent; border:none; outline:none; width:180px; border-bottom:1.5px dashed transparent;
+}
+#titleInput:focus{border-bottom-color:var(--muted);}
+.swatch{width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;}
+.swatch.active{border-color:var(--ink);}
+#sizeRange{width:80px;}
+.tbtn{
+  font-family:inherit; font-size:0.9rem; background:var(--card); border:1px solid var(--line);
+  color:var(--text); padding:7px 12px; border-radius:6px; cursor:pointer;
+}
+.tbtn.active{background:var(--accent); color:var(--paper); border-color:var(--accent);}
+.tbtn:hover:not(.active){background:var(--paper);}
+.spacer{flex:1;}
+#canvasWrap{flex:1; position:relative; overflow:hidden; background:var(--paper);}
+#drawCanvas{position:absolute; inset:0; touch-action:none; width:100%; height:100%;}
+#emptyState{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  flex-direction:column; gap:10px; color:var(--muted); font-size:1.1rem; text-align:center; padding:20px;
+}
+@media (max-width:640px){
+  #sidebar{position:fixed; z-index:10; height:100%; transform:translateX(-100%); transition:transform .2s; box-shadow:2px 0 10px rgba(0,0,0,.2);}
+  #sidebar.open{transform:translateX(0);}
+  #menuBtn{display:inline-block !important;}
+  #titleInput{width:110px;}
+}
+#menuBtn{display:none; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:7px 10px; cursor:pointer; font-size:1rem;}
+#driveStatus{font-size:0.8rem; color:var(--muted); font-family:system-ui,sans-serif; margin-right:4px;}
+#driveModal{
+  position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:50;
+}
+#driveModal.open{display:flex;}
+#driveModal .box{
+  background:var(--card); border-radius:10px; padding:20px; width:min(420px,90vw);
+  box-shadow:0 8px 30px rgba(0,0,0,.25);
+}
+#driveModal h2{margin:0 0 10px; font-size:1.15rem; color:var(--ink);}
+#driveModal p{font-size:0.85rem; color:var(--muted); font-family:system-ui,sans-serif; line-height:1.5;}
+#clientIdInput{width:100%; padding:8px; font-family:system-ui,sans-serif; font-size:0.85rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--text); margin:8px 0;}
+#driveModal .row{display:flex; gap:8px; justify-content:flex-end; margin-top:12px;}
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h1>✏️ てがきノート</h1>
+  <button id="newNoteBtn">＋ 新規ノート</button>
+  <ul id="noteList"></ul>
+</div>
+<div id="main">
+  <div id="toolbar">
+    <button id="menuBtn">☰</button>
+    <input id="titleInput" placeholder="ノートのタイトル" />
+    <button class="swatch active" data-color="#20233F" style="background:#20233F"></button>
+    <button class="swatch" data-color="#33518F" style="background:#33518F"></button>
+    <button class="swatch" data-color="#9C3B3B" style="background:#9C3B3B"></button>
+    <input type="range" id="sizeRange" min="1" max="16" value="3">
+    <button class="tbtn" id="eraserBtn">消しゴム</button>
+    <button class="tbtn" id="undoBtn">戻す</button>
+    <button class="tbtn" id="clearBtn">全消去</button>
+    <div class="spacer"></div>
+    <span id="driveStatus">未接続</span>
+    <button class="tbtn" id="driveSaveBtn" style="display:none;">Driveに保存</button>
+    <button class="tbtn" id="driveAuthBtn">Googleでログイン</button>
+    <button class="tbtn" id="driveSettingsBtn">Drive設定</button>
+  </div>
+  <div id="driveModal">
+    <div class="box">
+      <h2>Drive設定</h2>
+      <p>ご自身のGoogle CloudプロジェクトのOAuthクライアントID(ウェブアプリケーション用)を貼り付けてください。GitHub Pagesの公開URLが「承認済みのJavaScript生成元」に登録されている必要があります。</p>
+      <input id="clientIdInput" placeholder="xxxxx.apps.googleusercontent.com">
+      <div class="row">
+        <button class="tbtn" id="driveModalCancel">キャンセル</button>
+        <button class="tbtn active" id="driveModalSave">保存</button>
+      </div>
+    </div>
+  </div>
+  <div id="canvasWrap">
+    <canvas id="drawCanvas"></canvas>
+    <div id="emptyState" style="display:none;">
+      <div>まだノートがありません</div>
+      <div style="font-size:0.9rem;">「＋ 新規ノート」から始めましょう</div>
+    </div>
+  </div>
+</div>
+<script>
+const DB_KEY = 'handnote_notes_v1';
+let notes = [];
+let currentId = null;
+let strokes = [];
+let undone = [];
+let drawing = false;
+let currentColor = '#20233F';
+let eraser = false;
+let saveTimer = null;
+
+const canvas = document.getElementById('drawCanvas');
+const ctx = canvas.getContext('2d');
+const sizeRange = document.getElementById('sizeRange');
+const titleInput = document.getElementById('titleInput');
+const noteList = document.getElementById('noteList');
+const emptyState = document.getElementById('emptyState');
+const menuBtn = document.getElementById('menuBtn');
+const sidebar = document.getElementById('sidebar');
+
+function loadNotes(){
+  try{
+    const raw = localStorage.getItem(DB_KEY);
+    notes = raw ? JSON.parse(raw) : [];
+  }catch(e){ notes = []; }
+}
+function persist(){
+  try{ localStorage.setItem(DB_KEY, JSON.stringify(notes)); }catch(e){}
+}
+
+function resizeCanvas(){
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const prevData = canvas.width ? canvas.toDataURL() : null;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  drawRuledLines();
+  redrawStrokes();
+}
+function drawRuledLines(){
+  const w = canvas.width / (window.devicePixelRatio||1);
+  const h = canvas.height / (window.devicePixelRatio||1);
+  const lineColor = getComputedStyle(document.documentElement).getPropertyValue('--line').trim();
+  ctx.save();
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 1;
+  for(let y = 40; y < h; y += 32){
+    ctx.beginPath();
+    ctx.moveTo(0, y+0.5);
+    ctx.lineTo(w, y+0.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function redrawStrokes(){
+  const w = canvas.width/(window.devicePixelRatio||1), h = canvas.height/(window.devicePixelRatio||1);
+  ctx.clearRect(0,0,w,h);
+  drawRuledLines();
+  for(const s of strokes){
+    if(s.points.length < 1) continue;
+    ctx.save();
+    ctx.globalCompositeOperation = s.tool === 'eraser' ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = s.size;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s.points[0].x, s.points[0].y);
+    for(let i=1;i<s.points.length;i++) ctx.lineTo(s.points[i].x, s.points[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function pointerPos(e){
+  const rect = canvas.getBoundingClientRect();
+  return {x: e.clientX - rect.left, y: e.clientY - rect.top};
+}
+
+let currentStroke = null;
+canvas.addEventListener('pointerdown', e=>{
+  if(!currentId) return;
+  drawing = true;
+  undone = [];
+  const p = pointerPos(e);
+  currentStroke = {tool: eraser ? 'eraser':'pen', color: currentColor, size: Number(sizeRange.value)*(eraser?3:1), points:[p]};
+  strokes.push(currentStroke);
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e=>{
+  if(!drawing || !currentStroke) return;
+  currentStroke.points.push(pointerPos(e));
+  redrawStrokes();
+});
+function endStroke(){
+  if(!drawing) return;
+  drawing = false;
+  currentStroke = null;
+  scheduleSave();
+}
+canvas.addEventListener('pointerup', endStroke);
+canvas.addEventListener('pointerleave', endStroke);
+canvas.addEventListener('pointercancel', endStroke);
+
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveCurrentNote, 400);
+}
+function saveCurrentNote(){
+  const note = notes.find(n=>n.id===currentId);
+  if(!note) return;
+  note.strokes = strokes;
+  note.updatedAt = Date.now();
+  note.thumb = makeThumb();
+  persist();
+  renderList();
+}
+function makeThumb(){
+  const t = document.createElement('canvas');
+  t.width = 88; t.height = 64;
+  const tc = t.getContext('2d');
+  tc.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim();
+  tc.fillRect(0,0,88,64);
+  const w = canvas.width/(window.devicePixelRatio||1), h = canvas.height/(window.devicePixelRatio||1);
+  tc.drawImage(canvas, 0,0, w, h, 0,0,88,64);
+  return t.toDataURL();
+}
+
+function renderList(){
+  noteList.innerHTML = '';
+  emptyState.style.display = notes.length ? 'none':'flex';
+  canvas.style.display = notes.length ? 'block':'none';
+  const sorted = [...notes].sort((a,b)=>b.updatedAt-a.updatedAt);
+  for(const n of sorted){
+    const li = document.createElement('li');
+    li.className = 'note-item' + (n.id===currentId ? ' active':'');
+    const d = new Date(n.updatedAt);
+    li.innerHTML = `<img src="${n.thumb||''}" alt=""><div class="meta"><div class="title">${escapeHtml(n.title||'無題')}</div><div class="date">${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}</div></div><button class="del" title="削除">×</button>`;
+    li.addEventListener('click', (ev)=>{ if(ev.target.classList.contains('del')) return; selectNote(n.id); sidebar.classList.remove('open'); });
+    li.querySelector('.del').addEventListener('click', ()=>{ deleteNote(n.id); });
+    noteList.appendChild(li);
+  }
+}
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function selectNote(id){
+  saveCurrentNote();
+  currentId = id;
+  const n = notes.find(x=>x.id===id);
+  strokes = n ? (n.strokes||[]) : [];
+  undone = [];
+  titleInput.value = n ? (n.title||'') : '';
+  resizeCanvas();
+  renderList();
+}
+function newNote(){
+  saveCurrentNote();
+  const n = {id:'n'+Date.now(), title:'無題のノート', strokes:[], updatedAt:Date.now(), thumb:''};
+  notes.push(n);
+  persist();
+  selectNote(n.id);
+}
+function deleteNote(id){
+  notes = notes.filter(n=>n.id!==id);
+  persist();
+  if(currentId===id){
+    currentId = null; strokes=[];
+    if(notes.length){ selectNote(notes[0].id); } else { titleInput.value=''; resizeCanvas(); renderList(); }
+  } else { renderList(); }
+}
+
+titleInput.addEventListener('input', ()=>{
+  const n = notes.find(x=>x.id===currentId);
+  if(n){ n.title = titleInput.value; clearTimeout(saveTimer); saveTimer=setTimeout(saveCurrentNote,400); }
+});
+document.getElementById('newNoteBtn').addEventListener('click', newNote);
+document.querySelectorAll('.swatch').forEach(sw=>{
+  sw.addEventListener('click', ()=>{
+    document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('active'));
+    sw.classList.add('active');
+    currentColor = sw.dataset.color;
+    eraser = false;
+    document.getElementById('eraserBtn').classList.remove('active');
+  });
+});
+document.getElementById('eraserBtn').addEventListener('click', (e)=>{
+  eraser = !eraser;
+  e.target.classList.toggle('active', eraser);
+});
+document.getElementById('undoBtn').addEventListener('click', ()=>{
+  if(strokes.length){ undone.push(strokes.pop()); redrawStrokes(); scheduleSave(); }
+});
+document.getElementById('clearBtn').addEventListener('click', ()=>{
+  if(!currentId) return;
+  if(confirm('このノートを全部消しますか？')){ strokes=[]; undone=[]; redrawStrokes(); scheduleSave(); }
+});
+menuBtn.addEventListener('click', ()=> sidebar.classList.toggle('open'));
+window.addEventListener('resize', resizeCanvas);
+
+// --- Google Drive integration ---
+const CLIENT_ID_KEY = 'handnote_gdrive_client_id';
+let accessToken = null;
+let tokenClient = null;
+const driveStatus = document.getElementById('driveStatus');
+const driveSaveBtn = document.getElementById('driveSaveBtn');
+const driveAuthBtn = document.getElementById('driveAuthBtn');
+const driveModal = document.getElementById('driveModal');
+const clientIdInput = document.getElementById('clientIdInput');
+
+document.getElementById('driveSettingsBtn').addEventListener('click', ()=>{
+  clientIdInput.value = localStorage.getItem(CLIENT_ID_KEY) || '';
+  driveModal.classList.add('open');
+});
+document.getElementById('driveModalCancel').addEventListener('click', ()=> driveModal.classList.remove('open'));
+document.getElementById('driveModalSave').addEventListener('click', ()=>{
+  localStorage.setItem(CLIENT_ID_KEY, clientIdInput.value.trim());
+  driveModal.classList.remove('open');
+  initTokenClient();
+});
+
+function initTokenClient(){
+  const clientId = localStorage.getItem(CLIENT_ID_KEY);
+  if(!clientId || !window.google){ return; }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/drive.file',
+    callback: (resp)=>{
+      if(resp.error){ driveStatus.textContent = 'ログインに失敗しました'; return; }
+      accessToken = resp.access_token;
+      driveStatus.textContent = 'Drive接続済み';
+      driveAuthBtn.textContent = 'ログアウト';
+      driveSaveBtn.style.display = 'inline-block';
+    }
+  });
+}
+driveAuthBtn.addEventListener('click', ()=>{
+  if(accessToken){
+    google.accounts.oauth2.revoke(accessToken, ()=>{});
+    accessToken = null;
+    driveStatus.textContent = '未接続';
+    driveAuthBtn.textContent = 'Googleでログイン';
+    driveSaveBtn.style.display = 'none';
+    return;
+  }
+  const clientId = localStorage.getItem(CLIENT_ID_KEY);
+  if(!clientId){ driveModal.classList.add('open'); return; }
+  if(!tokenClient) initTokenClient();
+  if(tokenClient) tokenClient.requestAccessToken();
+});
+
+driveSaveBtn.addEventListener('click', async ()=>{
+  const n = notes.find(x=>x.id===currentId);
+  if(!n || !accessToken) return;
+  driveSaveBtn.textContent = '保存中...';
+  try{
+    const blob = await new Promise(res=> canvas.toBlob(res, 'image/png'));
+    const fileName = (n.title || '無題のノート') + '.png';
+    const metadata = {name: fileName, mimeType: 'image/png'};
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
+    form.append('file', blob);
+    const isUpdate = !!n.driveFileId;
+    const url = isUpdate
+      ? `https://www.googleapis.com/upload/drive/v3/files/${n.driveFileId}?uploadType=multipart`
+      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+    const res = await fetch(url, {
+      method: isUpdate ? 'PATCH' : 'POST',
+      headers: {Authorization: 'Bearer ' + accessToken},
+      body: form
+    });
+    if(!res.ok) throw new Error('upload failed: ' + res.status);
+    const data = await res.json();
+    n.driveFileId = data.id;
+    persist();
+    driveStatus.textContent = 'Driveに保存しました';
+  }catch(e){
+    driveStatus.textContent = '保存に失敗しました';
+  }
+  driveSaveBtn.textContent = 'Driveに保存';
+});
+
+window.addEventListener('load', initTokenClient);
+
+loadNotes();
+if(notes.length){
+  selectNote([...notes].sort((a,b)=>b.updatedAt-a.updatedAt)[0].id);
+} else {
+  renderList();
+  resizeCanvas();
+}
+</script>
+</body>
+</html>
