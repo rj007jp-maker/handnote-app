@@ -558,6 +558,9 @@ voiceBtn.addEventListener('click', ()=>{
 
 // --- Google Drive integration ---
 const CLIENT_ID_KEY = 'handnote_gdrive_client_id';
+const CONNECTED_KEY = 'handnote_gdrive_connected';
+const DEFAULT_CLIENT_ID = '203581774802-qnf8l2f131ucqtb8pnv37fd66k5htmme.apps.googleusercontent.com';
+if(!localStorage.getItem(CLIENT_ID_KEY)) localStorage.setItem(CLIENT_ID_KEY, DEFAULT_CLIENT_ID);
 let accessToken = null;
 let tokenClient = null;
 const driveStatus = document.getElementById('driveStatus');
@@ -584,18 +587,26 @@ function initTokenClient(){
     client_id: clientId,
     scope: 'https://www.googleapis.com/auth/drive.file',
     callback: (resp)=>{
-      if(resp.error){ driveStatus.textContent = 'ログインに失敗しました'; return; }
+      if(resp.error){
+        if(localStorage.getItem(CONNECTED_KEY)) driveStatus.textContent = '未接続(再ログインしてください)';
+        return;
+      }
       accessToken = resp.access_token;
+      localStorage.setItem(CONNECTED_KEY, '1');
       driveStatus.textContent = 'Drive接続済み';
       driveAuthBtn.textContent = 'ログアウト';
       driveSaveBtn.style.display = 'inline-block';
     }
   });
+  if(localStorage.getItem(CONNECTED_KEY)){
+    tokenClient.requestAccessToken({prompt: ''});
+  }
 }
 driveAuthBtn.addEventListener('click', ()=>{
   if(accessToken){
     google.accounts.oauth2.revoke(accessToken, ()=>{});
     accessToken = null;
+    localStorage.removeItem(CONNECTED_KEY);
     driveStatus.textContent = '未接続';
     driveAuthBtn.textContent = 'Googleでログイン';
     driveSaveBtn.style.display = 'none';
