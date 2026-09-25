@@ -108,12 +108,27 @@ body{
 #driveModal p{font-size:0.85rem; color:var(--muted); font-family:system-ui,sans-serif; line-height:1.5;}
 #clientIdInput{width:100%; padding:8px; font-family:system-ui,sans-serif; font-size:0.85rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--text); margin:8px 0;}
 #driveModal .row{display:flex; gap:8px; justify-content:flex-end; margin-top:12px;}
+#calModal{position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:50;}
+#calModal.open{display:flex;}
+#calModal .box{background:var(--card); border-radius:10px; padding:20px; width:min(480px,92vw); max-height:85vh; overflow-y:auto; box-shadow:0 8px 30px rgba(0,0,0,.25);}
+.calHeader{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:6px;}
+.calHeader button{background:var(--paper-dark); border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer; font-size:1rem; color:var(--text); font-family:inherit;}
+#calLabel{font-size:1.1rem; font-weight:700; color:var(--ink); flex:1; text-align:center;}
+.calGrid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:14px;}
+.calDow{text-align:center; font-size:0.75rem; color:var(--muted); font-family:system-ui,sans-serif;}
+.calCell{aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:6px; cursor:pointer; font-size:0.85rem; background:var(--paper); position:relative;}
+.calCell.empty{visibility:hidden; cursor:default;}
+.calCell.hasNotes{background:var(--paper-dark); font-weight:700;}
+.calCell.selected{outline:2px solid var(--accent);}
+.calDot{width:5px; height:5px; border-radius:50%; background:var(--accent); margin-top:2px;}
+#calDayNotes .note-item{margin-bottom:6px; cursor:pointer;}
 </style>
 </head>
 <body>
 <div id="sidebar">
   <h1>✏️ てがきノート</h1>
   <button id="newNoteBtn">＋ 新規ノート</button>
+  <button id="openCalBtn" class="tbtn" style="width:100%;margin-bottom:10px;">📅 カレンダーで見る</button>
   <ul id="noteList"></ul>
 </div>
 <div id="main">
@@ -150,6 +165,18 @@ body{
     <div id="emptyState" style="display:none;">
       <div>まだノートがありません</div>
       <div style="font-size:0.9rem;">「＋ 新規ノート」から始めましょう</div>
+    </div>
+  </div>
+  <div id="calModal">
+    <div class="box">
+      <div class="calHeader">
+        <button id="calPrev">‹</button>
+        <div id="calLabel"></div>
+        <button id="calNext">›</button>
+        <button id="calClose">✕</button>
+      </div>
+      <div id="calGrid" class="calGrid"></div>
+      <div id="calDayNotes"></div>
     </div>
   </div>
 </div>
@@ -329,7 +356,7 @@ function selectNote(id){
 }
 function newNote(){
   saveCurrentNote();
-  const n = {id:'n'+Date.now(), title:'無題のノート', strokes:[], updatedAt:Date.now(), thumb:''};
+  const n = {id:'n'+Date.now(), title:'無題のノート', strokes:[], createdAt:Date.now(), updatedAt:Date.now(), thumb:''};
   notes.push(n);
   persist();
   selectNote(n.id);
@@ -370,6 +397,75 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
 });
 menuBtn.addEventListener('click', ()=> sidebar.classList.toggle('open'));
 window.addEventListener('resize', resizeCanvas);
+
+// --- Calendar view ---
+const calModal = document.getElementById('calModal');
+const calGrid = document.getElementById('calGrid');
+const calLabel = document.getElementById('calLabel');
+const calDayNotes = document.getElementById('calDayNotes');
+let calState = null;
+
+document.getElementById('openCalBtn').addEventListener('click', ()=>{
+  const now = new Date();
+  calState = {year: now.getFullYear(), month: now.getMonth()};
+  renderCalendar();
+  calModal.classList.add('open');
+  sidebar.classList.remove('open');
+});
+document.getElementById('calClose').addEventListener('click', ()=> calModal.classList.remove('open'));
+document.getElementById('calPrev').addEventListener('click', ()=>{
+  calState.month--; if(calState.month<0){ calState.month=11; calState.year--; } renderCalendar();
+});
+document.getElementById('calNext').addEventListener('click', ()=>{
+  calState.month++; if(calState.month>11){ calState.month=0; calState.year++; } renderCalendar();
+});
+
+function dateKey(ts){ const d=new Date(ts); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
+
+function renderCalendar(){
+  const {year, month} = calState;
+  calLabel.textContent = year + '年' + (month+1) + '月';
+  const notesByDay = {};
+  for(const n of notes){
+    const key = dateKey(n.createdAt || n.updatedAt);
+    (notesByDay[key] = notesByDay[key] || []).push(n);
+  }
+  calGrid.innerHTML = '';
+  ['日','月','火','水','木','金','土'].forEach(d=>{
+    const el = document.createElement('div'); el.className='calDow'; el.textContent=d; calGrid.appendChild(el);
+  });
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  for(let i=0;i<firstDay;i++){
+    const el = document.createElement('div'); el.className='calCell empty'; calGrid.appendChild(el);
+  }
+  for(let day=1; day<=daysInMonth; day++){
+    const key = year+'-'+(month+1)+'-'+day;
+    const dayNotes = notesByDay[key] || [];
+    const el = document.createElement('div');
+    el.className = 'calCell' + (dayNotes.length ? ' hasNotes':'');
+    el.innerHTML = day + (dayNotes.length ? '<div class="calDot"></div>' : '');
+    el.addEventListener('click', ()=> selectCalDay(dayNotes, el));
+    calGrid.appendChild(el);
+  }
+  calDayNotes.innerHTML = '';
+}
+function selectCalDay(dayNotes, el){
+  document.querySelectorAll('.calCell.selected').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  calDayNotes.innerHTML = '';
+  if(!dayNotes.length){
+    calDayNotes.innerHTML = '<p style="font-size:0.85rem;color:var(--muted);font-family:system-ui,sans-serif;">この日のノートはありません</p>';
+    return;
+  }
+  for(const n of dayNotes){
+    const div = document.createElement('div');
+    div.className = 'note-item';
+    div.innerHTML = `<img src="${n.thumb||''}" alt=""><div class="meta"><div class="title">${escapeHtml(n.title||'無題')}</div></div>`;
+    div.addEventListener('click', ()=>{ selectNote(n.id); calModal.classList.remove('open'); });
+    calDayNotes.appendChild(div);
+  }
+}
 
 // --- Voice input ---
 const voiceBtn = document.getElementById('voiceBtn');
