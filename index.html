@@ -470,12 +470,39 @@ function renderCalendar(){
     el.className = cls;
     if(holiday) el.title = holiday;
     el.innerHTML = day + (dayNotes.length ? '<div class="calDot"></div>' : '');
-    el.addEventListener('click', ()=> selectCalDay(dayNotes, el, holiday));
+    el.addEventListener('click', ()=> handleDayClick(dayNotes, el, holiday, year, month, day));
     calGrid.appendChild(el);
   }
   calDayNotes.innerHTML = '';
 }
-function selectCalDay(dayNotes, el, holiday){
+function createNoteForDate(year, month, day){
+  saveCurrentNote();
+  const ts = new Date(year, month, day, 12, 0, 0).getTime();
+  const n = {id:'n'+Date.now(), title:'無題のノート', strokes:[], createdAt:ts, updatedAt:ts, thumb:''};
+  notes.push(n);
+  persist();
+  currentId = n.id;
+  strokes = [];
+  undone = [];
+  titleInput.value = n.title;
+  textCursorY = 60;
+  resizeCanvas();
+  renderList();
+}
+function handleDayClick(dayNotes, el, holiday, year, month, day){
+  if(dayNotes.length === 0){
+    createNoteForDate(year, month, day);
+    calModal.classList.remove('open');
+    return;
+  }
+  if(dayNotes.length === 1){
+    selectNote(dayNotes[0].id);
+    calModal.classList.remove('open');
+    return;
+  }
+  selectCalDay(dayNotes, el, holiday, year, month, day);
+}
+function selectCalDay(dayNotes, el, holiday, year, month, day){
   document.querySelectorAll('.calCell.selected').forEach(c=>c.classList.remove('selected'));
   el.classList.add('selected');
   calDayNotes.innerHTML = '';
@@ -496,6 +523,12 @@ function selectCalDay(dayNotes, el, holiday){
     div.addEventListener('click', ()=>{ selectNote(n.id); calModal.classList.remove('open'); });
     calDayNotes.appendChild(div);
   }
+  const addBtn = document.createElement('button');
+  addBtn.className = 'tbtn';
+  addBtn.style.cssText = 'width:100%;margin-top:6px;';
+  addBtn.textContent = '＋ この日に新規ノートを追加';
+  addBtn.addEventListener('click', ()=>{ createNoteForDate(year, month, day); calModal.classList.remove('open'); });
+  calDayNotes.appendChild(addBtn);
 }
 
 // --- Keyboard text input ---
