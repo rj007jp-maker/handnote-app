@@ -584,6 +584,8 @@ const ocrResultText = document.getElementById('ocrResultText');
 document.getElementById('ocrCancel').addEventListener('click', ()=> ocrModal.classList.remove('open'));
 document.getElementById('ocrInsert').addEventListener('click', ()=>{
   const lines = ocrResultText.value.split('\n').map(l=>l.trim()).filter(Boolean);
+  strokes = strokes.filter(s => s.tool === 'text');
+  textCursorY = computeTextCursorY();
   const h = canvas.height/(window.devicePixelRatio||1);
   for(const line of lines){
     if(textCursorY > h - 30) textCursorY = 60;
