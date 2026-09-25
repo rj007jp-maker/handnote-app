@@ -126,6 +126,13 @@ body{
 .calCell.sun{color:var(--ink-red);}
 .calCell.sat{color:var(--ink-blue);}
 #calDayNotes .note-item{margin-bottom:6px; cursor:pointer;}
+#visionModal, #ocrModal{position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:50;}
+#visionModal.open, #ocrModal.open{display:flex;}
+#visionModal .box, #ocrModal .box{background:var(--card); border-radius:10px; padding:20px; width:min(460px,90vw); box-shadow:0 8px 30px rgba(0,0,0,.25);}
+#visionModal h2, #ocrModal h2{margin:0 0 10px; font-size:1.15rem; color:var(--ink);}
+#visionModal p, #ocrModal p{font-size:0.85rem; color:var(--muted); font-family:system-ui,sans-serif; line-height:1.5;}
+#visionKeyInput{width:100%; padding:8px; font-family:system-ui,sans-serif; font-size:0.85rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--text); margin:8px 0;}
+#visionModal .row, #ocrModal .row{display:flex; gap:8px; justify-content:flex-end; margin-top:12px;}
 </style>
 </head>
 <body>
@@ -148,6 +155,8 @@ body{
     <button class="tbtn" id="clearBtn">全消去</button>
     <button class="tbtn" id="voiceBtn">🎤 音声入力</button>
     <button class="tbtn" id="textBtn">⌨️ テキスト入力</button>
+    <button class="tbtn" id="ocrBtn">🔤 活字に変換</button>
+    <button class="tbtn" id="visionSettingsBtn">Vision設定</button>
     <div class="spacer"></div>
     <span id="driveStatus">未接続</span>
     <button class="tbtn" id="driveSaveBtn" style="display:none;">Driveに保存</button>
@@ -183,6 +192,28 @@ body{
       </div>
       <div id="calGrid" class="calGrid"></div>
       <div id="calDayNotes"></div>
+    </div>
+  </div>
+  <div id="visionModal">
+    <div class="box">
+      <h2>Vision設定</h2>
+      <p>Cloud Vision APIのAPIキーを貼り付けてください。GitHub PagesのURLで「HTTPリファラ制限」をかけたキーを使うと安全です。</p>
+      <input id="visionKeyInput" placeholder="AIza...">
+      <div class="row">
+        <button class="tbtn" id="visionModalCancel">キャンセル</button>
+        <button class="tbtn active" id="visionModalSave">保存</button>
+      </div>
+    </div>
+  </div>
+  <div id="ocrModal">
+    <div class="box">
+      <h2>認識結果</h2>
+      <p>内容を確認・修正してからノートに挿入できます。</p>
+      <textarea id="ocrResultText" style="width:100%;min-height:120px;font-family:system-ui,sans-serif;font-size:0.9rem;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--text);"></textarea>
+      <div class="row">
+        <button class="tbtn" id="ocrCancel">キャンセル</button>
+        <button class="tbtn active" id="ocrInsert">ノートに挿入</button>
+      </div>
     </div>
   </div>
 </div>
@@ -530,6 +561,98 @@ function selectCalDay(dayNotes, el, holiday, year, month, day){
   addBtn.addEventListener('click', ()=>{ createNoteForDate(year, month, day); calModal.classList.remove('open'); });
   calDayNotes.appendChild(addBtn);
 }
+
+// --- Handwriting to print text (Vision API) ---
+const VISION_KEY_KEY = 'handnote_vision_api_key';
+const DEFAULT_VISION_KEY = 'AIzaSyDsrvJ8gvW1rsow2TfLSqak3VCp6Bny-zc';
+if(!localStorage.getItem(VISION_KEY_KEY)) localStorage.setItem(VISION_KEY_KEY, DEFAULT_VISION_KEY);
+const visionModal = document.getElementById('visionModal');
+const visionKeyInput = document.getElementById('visionKeyInput');
+document.getElementById('visionSettingsBtn').addEventListener('click', ()=>{
+  visionKeyInput.value = localStorage.getItem(VISION_KEY_KEY) || '';
+  visionModal.classList.add('open');
+});
+document.getElementById('visionModalCancel').addEventListener('click', ()=> visionModal.classList.remove('open'));
+document.getElementById('visionModalSave').addEventListener('click', ()=>{
+  localStorage.setItem(VISION_KEY_KEY, visionKeyInput.value.trim());
+  visionModal.classList.remove('open');
+});
+
+const ocrBtn = document.getElementById('ocrBtn');
+const ocrModal = document.getElementById('ocrModal');
+const ocrResultText = document.getElementById('ocrResultText');
+document.getElementById('ocrCancel').addEventListener('click', ()=> ocrModal.classList.remove('open'));
+document.getElementById('ocrInsert').addEventListener('click', ()=>{
+  const lines = ocrResultText.value.split('\n').map(l=>l.trim()).filter(Boolean);
+  const h = canvas.height/(window.devicePixelRatio||1);
+  for(const line of lines){
+    if(textCursorY > h - 30) textCursorY = 60;
+    strokes.push({tool:'text', text: line, x:24, y:textCursorY, color: currentColor, size:26});
+    textCursorY += 36;
+  }
+  redrawStrokes();
+  scheduleSave();
+  ocrModal.classList.remove('open');
+});
+
+function renderStrokesForOCR(){
+  const w = canvas.width/(window.devicePixelRatio||1), h = canvas.height/(window.devicePixelRatio||1);
+  const tmp = document.createElement('canvas');
+  tmp.width = w; tmp.height = h;
+  const tctx = tmp.getContext('2d');
+  tctx.fillStyle = '#FFFFFF';
+  tctx.fillRect(0,0,w,h);
+  for(const s of strokes){
+    if(s.tool === 'text'){
+      tctx.fillStyle = '#000000';
+      tctx.font = (s.size||26) + "px sans-serif";
+      tctx.textBaseline = 'top';
+      tctx.fillText(s.text, s.x, s.y);
+      continue;
+    }
+    if(!s.points || s.points.length < 1) continue;
+    tctx.save();
+    tctx.globalCompositeOperation = s.tool === 'eraser' ? 'destination-out' : 'source-over';
+    tctx.strokeStyle = '#000000';
+    tctx.lineWidth = s.size;
+    tctx.lineCap = 'round';
+    tctx.lineJoin = 'round';
+    tctx.beginPath();
+    tctx.moveTo(s.points[0].x, s.points[0].y);
+    for(let i=1;i<s.points.length;i++) tctx.lineTo(s.points[i].x, s.points[i].y);
+    tctx.stroke();
+    tctx.restore();
+  }
+  return tmp.toDataURL('image/png').split(',')[1];
+}
+
+ocrBtn.addEventListener('click', async ()=>{
+  if(!currentId) return;
+  const apiKey = localStorage.getItem(VISION_KEY_KEY);
+  if(!apiKey){ visionKeyInput.value=''; visionModal.classList.add('open'); return; }
+  const originalLabel = ocrBtn.textContent;
+  ocrBtn.textContent = '認識中...';
+  try{
+    const base64 = renderStrokesForOCR();
+    const res = await fetch('https://vision.googleapis.com/v1/images:annotate?key=' + apiKey, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({requests:[{
+        image:{content: base64},
+        features:[{type:'DOCUMENT_TEXT_DETECTION'}],
+        imageContext:{languageHints:['ja']}
+      }]})
+    });
+    const data = await res.json();
+    const text = (data.responses && data.responses[0] && data.responses[0].fullTextAnnotation)
+      ? data.responses[0].fullTextAnnotation.text : '';
+    ocrResultText.value = text || '(文字が認識できませんでした)';
+    ocrModal.classList.add('open');
+  }catch(e){
+    alert('認識に失敗しました。Vision設定のAPIキーやネットワークをご確認ください。');
+  }
+  ocrBtn.textContent = originalLabel;
+});
 
 // --- Keyboard text input ---
 const textBtn = document.getElementById('textBtn');
