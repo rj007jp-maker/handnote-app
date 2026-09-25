@@ -147,6 +147,7 @@ body{
     <button class="tbtn" id="undoBtn">戻す</button>
     <button class="tbtn" id="clearBtn">全消去</button>
     <button class="tbtn" id="voiceBtn">🎤 音声入力</button>
+    <button class="tbtn" id="textBtn">⌨️ テキスト入力</button>
     <div class="spacer"></div>
     <span id="driveStatus">未接続</span>
     <button class="tbtn" id="driveSaveBtn" style="display:none;">Driveに保存</button>
@@ -166,6 +167,7 @@ body{
   </div>
   <div id="canvasWrap">
     <canvas id="drawCanvas"></canvas>
+    <input id="textInputOverlay" type="text" style="display:none;position:absolute;font-family:'Kalam',sans-serif;font-size:26px;color:var(--ink);background:transparent;border:none;border-bottom:1.5px dashed var(--muted);outline:none;padding:0;min-width:200px;">
     <div id="emptyState" style="display:none;">
       <div>まだノートがありません</div>
       <div style="font-size:0.9rem;">「＋ 新規ノート」から始めましょう</div>
@@ -495,6 +497,34 @@ function selectCalDay(dayNotes, el, holiday){
     calDayNotes.appendChild(div);
   }
 }
+
+// --- Keyboard text input ---
+const textBtn = document.getElementById('textBtn');
+const textInputOverlay = document.getElementById('textInputOverlay');
+function commitTextOverlay(){
+  const text = textInputOverlay.value.trim();
+  textInputOverlay.style.display = 'none';
+  textInputOverlay.value = '';
+  if(!text) return;
+  const h = canvas.height/(window.devicePixelRatio||1);
+  if(textCursorY > h - 30) textCursorY = 60;
+  strokes.push({tool:'text', text, x:24, y:textCursorY, color: currentColor, size:26});
+  textCursorY += 36;
+  redrawStrokes();
+  scheduleSave();
+}
+textBtn.addEventListener('click', ()=>{
+  if(!currentId) return;
+  textInputOverlay.style.left = '20px';
+  textInputOverlay.style.top = (textCursorY - 4) + 'px';
+  textInputOverlay.style.display = 'block';
+  textInputOverlay.focus();
+});
+textInputOverlay.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter'){ commitTextOverlay(); }
+  else if(e.key === 'Escape'){ textInputOverlay.style.display='none'; textInputOverlay.value=''; }
+});
+textInputOverlay.addEventListener('blur', commitTextOverlay);
 
 // --- Voice input ---
 const voiceBtn = document.getElementById('voiceBtn');
