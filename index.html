@@ -140,6 +140,7 @@ body{
   <h1>✏️ てがきノート</h1>
   <button id="newNoteBtn">＋ 新規ノート</button>
   <button id="openCalBtn" class="tbtn" style="width:100%;margin-bottom:10px;">📅 カレンダーで見る</button>
+  <input id="searchInput" type="text" placeholder="🔍 ノートを検索" style="width:100%;padding:8px 10px;font-family:system-ui,sans-serif;font-size:0.85rem;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--text);margin-bottom:10px;">
   <ul id="noteList"></ul>
 </div>
 <div id="main">
@@ -363,11 +364,30 @@ function makeThumb(){
   return t.toDataURL();
 }
 
+let searchQuery = '';
+function noteMatchesQuery(n, q){
+  if(!q) return true;
+  if((n.title||'').toLowerCase().includes(q)) return true;
+  if(n.strokes){
+    for(const s of n.strokes){
+      if(s.tool === 'text' && s.text && s.text.toLowerCase().includes(q)) return true;
+    }
+  }
+  return false;
+}
+document.getElementById('searchInput').addEventListener('input', (e)=>{
+  searchQuery = e.target.value.trim().toLowerCase();
+  renderList();
+});
+
 function renderList(){
   noteList.innerHTML = '';
   emptyState.style.display = notes.length ? 'none':'flex';
   canvas.style.display = notes.length ? 'block':'none';
-  const sorted = [...notes].sort((a,b)=>b.updatedAt-a.updatedAt);
+  const sorted = [...notes].sort((a,b)=>b.updatedAt-a.updatedAt).filter(n=>noteMatchesQuery(n, searchQuery));
+  if(searchQuery && !sorted.length){
+    noteList.innerHTML = '<p style="font-size:0.85rem;color:var(--muted);font-family:system-ui,sans-serif;padding:6px 4px;">見つかりませんでした</p>';
+  }
   for(const n of sorted){
     const li = document.createElement('li');
     li.className = 'note-item' + (n.id===currentId ? ' active':'');
