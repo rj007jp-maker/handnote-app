@@ -127,6 +127,7 @@ body{
     <button class="tbtn" id="eraserBtn">消しゴム</button>
     <button class="tbtn" id="undoBtn">戻す</button>
     <button class="tbtn" id="clearBtn">全消去</button>
+    <button class="tbtn" id="voiceBtn">🎤 音声入力</button>
     <div class="spacer"></div>
     <span id="driveStatus">未接続</span>
     <button class="tbtn" id="driveSaveBtn" style="display:none;">Driveに保存</button>
@@ -214,6 +215,15 @@ function redrawStrokes(){
   ctx.clearRect(0,0,w,h);
   drawRuledLines();
   for(const s of strokes){
+    if(s.tool === 'text'){
+      ctx.save();
+      ctx.fillStyle = s.color;
+      ctx.font = (s.size||26) + "px 'Kalam', sans-serif";
+      ctx.textBaseline = 'top';
+      ctx.fillText(s.text, s.x, s.y);
+      ctx.restore();
+      continue;
+    }
     if(s.points.length < 1) continue;
     ctx.save();
     ctx.globalCompositeOperation = s.tool === 'eraser' ? 'destination-out' : 'source-over';
@@ -235,6 +245,12 @@ function pointerPos(e){
 }
 
 let currentStroke = null;
+let textCursorY = 60;
+function computeTextCursorY(){
+  let maxY = 24;
+  for(const s of strokes){ if(s.tool==='text' && s.y>maxY) maxY = s.y; }
+  return maxY + 36;
+}
 canvas.addEventListener('pointerdown', e=>{
   if(!currentId) return;
   drawing = true;
@@ -306,6 +322,7 @@ function selectNote(id){
   const n = notes.find(x=>x.id===id);
   strokes = n ? (n.strokes||[]) : [];
   undone = [];
+  textCursorY = computeTextCursorY();
   titleInput.value = n ? (n.title||'') : '';
   resizeCanvas();
   renderList();
@@ -349,10 +366,40 @@ document.getElementById('undoBtn').addEventListener('click', ()=>{
 });
 document.getElementById('clearBtn').addEventListener('click', ()=>{
   if(!currentId) return;
-  if(confirm('このノートを全部消しますか？')){ strokes=[]; undone=[]; redrawStrokes(); scheduleSave(); }
+  if(confirm('このノートを全部消しますか？')){ strokes=[]; undone=[]; textCursorY=60; redrawStrokes(); scheduleSave(); }
 });
 menuBtn.addEventListener('click', ()=> sidebar.classList.toggle('open'));
 window.addEventListener('resize', resizeCanvas);
+
+// --- Voice input ---
+const voiceBtn = document.getElementById('voiceBtn');
+let listening = false;
+voiceBtn.addEventListener('click', ()=>{
+  if(!currentId || listening) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ alert('お使いのブラウザは音声入力に対応していません。Chromeでお試しください。'); return; }
+  const r = new SR();
+  r.lang = 'ja-JP';
+  r.interimResults = false;
+  r.maxAlternatives = 1;
+  listening = true;
+  voiceBtn.classList.add('active');
+  voiceBtn.textContent = '🎤 聞き取り中...';
+  r.onresult = (e)=>{
+    const text = e.results[0][0].transcript;
+    if(text){
+      const h = canvas.height/(window.devicePixelRatio||1);
+      if(textCursorY > h - 30) textCursorY = 60;
+      strokes.push({tool:'text', text, x:24, y:textCursorY, color: currentColor, size:26});
+      textCursorY += 36;
+      redrawStrokes();
+      scheduleSave();
+    }
+  };
+  r.onerror = ()=>{ voiceBtn.textContent = '🎤 音声入力'; };
+  r.onend = ()=>{ listening = false; voiceBtn.classList.remove('active'); voiceBtn.textContent = '🎤 音声入力'; };
+  r.start();
+});
 
 // --- Google Drive integration ---
 const CLIENT_ID_KEY = 'handnote_gdrive_client_id';
