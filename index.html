@@ -121,6 +121,10 @@ body{
 .calCell.hasNotes{background:var(--paper-dark); font-weight:700;}
 .calCell.selected{outline:2px solid var(--accent);}
 .calDot{width:5px; height:5px; border-radius:50%; background:var(--accent); margin-top:2px;}
+.calDow.sun{color:var(--ink-red);}
+.calDow.sat{color:var(--ink-blue);}
+.calCell.sun{color:var(--ink-red);}
+.calCell.sat{color:var(--ink-blue);}
 #calDayNotes .note-item{margin-bottom:6px; cursor:pointer;}
 </style>
 </head>
@@ -399,6 +403,18 @@ menuBtn.addEventListener('click', ()=> sidebar.classList.toggle('open'));
 window.addEventListener('resize', resizeCanvas);
 
 // --- Calendar view ---
+const HOLIDAYS = {
+  '2026-1-1':'元日','2026-1-12':'成人の日','2026-2-11':'建国記念の日','2026-2-23':'天皇誕生日',
+  '2026-3-20':'春分の日','2026-4-29':'昭和の日','2026-5-3':'憲法記念日','2026-5-4':'みどりの日',
+  '2026-5-5':'こどもの日','2026-5-6':'休日','2026-7-20':'海の日','2026-8-11':'山の日',
+  '2026-9-21':'敬老の日','2026-9-22':'休日','2026-9-23':'秋分の日','2026-10-12':'スポーツの日',
+  '2026-11-3':'文化の日','2026-11-23':'勤労感謝の日',
+  '2027-1-1':'元日','2027-1-11':'成人の日','2027-2-11':'建国記念の日','2027-2-23':'天皇誕生日',
+  '2027-3-21':'春分の日','2027-3-22':'休日','2027-4-29':'昭和の日','2027-5-3':'憲法記念日',
+  '2027-5-4':'みどりの日','2027-5-5':'こどもの日','2027-7-19':'海の日','2027-8-11':'山の日',
+  '2027-9-20':'敬老の日','2027-9-23':'秋分の日','2027-10-11':'スポーツの日','2027-11-3':'文化の日',
+  '2027-11-23':'勤労感謝の日'
+};
 const calModal = document.getElementById('calModal');
 const calGrid = document.getElementById('calGrid');
 const calLabel = document.getElementById('calLabel');
@@ -431,8 +447,10 @@ function renderCalendar(){
     (notesByDay[key] = notesByDay[key] || []).push(n);
   }
   calGrid.innerHTML = '';
-  ['日','月','火','水','木','金','土'].forEach(d=>{
-    const el = document.createElement('div'); el.className='calDow'; el.textContent=d; calGrid.appendChild(el);
+  ['日','月','火','水','木','金','土'].forEach((d,i)=>{
+    const el = document.createElement('div');
+    el.className = 'calDow' + (i===0?' sun':i===6?' sat':'');
+    el.textContent=d; calGrid.appendChild(el);
   });
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month+1, 0).getDate();
@@ -442,20 +460,31 @@ function renderCalendar(){
   for(let day=1; day<=daysInMonth; day++){
     const key = year+'-'+(month+1)+'-'+day;
     const dayNotes = notesByDay[key] || [];
+    const dow = new Date(year, month, day).getDay();
+    const holiday = HOLIDAYS[key];
     const el = document.createElement('div');
-    el.className = 'calCell' + (dayNotes.length ? ' hasNotes':'');
+    let cls = 'calCell' + (dayNotes.length ? ' hasNotes':'');
+    if(dow===0 || holiday) cls += ' sun'; else if(dow===6) cls += ' sat';
+    el.className = cls;
+    if(holiday) el.title = holiday;
     el.innerHTML = day + (dayNotes.length ? '<div class="calDot"></div>' : '');
-    el.addEventListener('click', ()=> selectCalDay(dayNotes, el));
+    el.addEventListener('click', ()=> selectCalDay(dayNotes, el, holiday));
     calGrid.appendChild(el);
   }
   calDayNotes.innerHTML = '';
 }
-function selectCalDay(dayNotes, el){
+function selectCalDay(dayNotes, el, holiday){
   document.querySelectorAll('.calCell.selected').forEach(c=>c.classList.remove('selected'));
   el.classList.add('selected');
   calDayNotes.innerHTML = '';
+  if(holiday){
+    const h = document.createElement('div');
+    h.style.cssText = 'font-size:0.8rem;color:var(--ink-red);font-family:system-ui,sans-serif;margin-bottom:6px;';
+    h.textContent = '🎌 ' + holiday;
+    calDayNotes.appendChild(h);
+  }
   if(!dayNotes.length){
-    calDayNotes.innerHTML = '<p style="font-size:0.85rem;color:var(--muted);font-family:system-ui,sans-serif;">この日のノートはありません</p>';
+    calDayNotes.innerHTML += '<p style="font-size:0.85rem;color:var(--muted);font-family:system-ui,sans-serif;">この日のノートはありません</p>';
     return;
   }
   for(const n of dayNotes){
