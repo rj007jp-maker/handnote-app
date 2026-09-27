@@ -181,7 +181,7 @@ body{
   <div id="canvasWrap">
     <canvas id="drawCanvas"></canvas>
     <canvas id="textCanvas"></canvas>
-    <input id="textInputOverlay" type="text" style="display:none;position:absolute;font-family:'Kalam',sans-serif;font-size:26px;color:var(--ink);background:transparent;border:none;border-bottom:1.5px dashed var(--muted);outline:none;padding:0;min-width:200px;">
+    <textarea id="textInputOverlay" style="display:none;position:absolute;font-family:'Kalam',sans-serif;font-size:26px;line-height:36px;color:var(--ink);background:transparent;border:none;border-bottom:1.5px dashed var(--muted);outline:none;padding:0;min-width:240px;max-width:80%;resize:none;overflow:hidden;" rows="1"></textarea>
     <div id="emptyState" style="display:none;">
       <div>まだノートがありません</div>
       <div style="font-size:0.9rem;">「＋ 新規ノート」から始めましょう</div>
@@ -707,14 +707,17 @@ ocrBtn.addEventListener('click', async ()=>{
 const textBtn = document.getElementById('textBtn');
 const textInputOverlay = document.getElementById('textInputOverlay');
 function commitTextOverlay(){
-  const text = textInputOverlay.value.trim();
+  const raw = textInputOverlay.value;
   textInputOverlay.style.display = 'none';
   textInputOverlay.value = '';
-  if(!text) return;
+  const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+  if(!lines.length) return;
   const h = canvas.height/(window.devicePixelRatio||1);
-  if(textCursorY > h - 30) textCursorY = 60;
-  strokes.push({tool:'text', text, x:24, y:textCursorY, color: currentColor, size:26});
-  textCursorY += 36;
+  for(const line of lines){
+    if(textCursorY > h - 30) textCursorY = 60;
+    strokes.push({tool:'text', text: line, x:24, y:textCursorY, color: currentColor, size:26});
+    textCursorY += 36;
+  }
   redrawStrokes();
   scheduleSave();
 }
@@ -726,8 +729,12 @@ textBtn.addEventListener('click', ()=>{
   textInputOverlay.focus();
 });
 textInputOverlay.addEventListener('keydown', (e)=>{
-  if(e.key === 'Enter'){ commitTextOverlay(); }
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); commitTextOverlay(); }
   else if(e.key === 'Escape'){ textInputOverlay.style.display='none'; textInputOverlay.value=''; }
+});
+textInputOverlay.addEventListener('input', ()=>{
+  textInputOverlay.style.height = 'auto';
+  textInputOverlay.style.height = textInputOverlay.scrollHeight + 'px';
 });
 textInputOverlay.addEventListener('blur', commitTextOverlay);
 
