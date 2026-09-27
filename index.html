@@ -479,6 +479,14 @@ toggleTextBtn.addEventListener('click', ()=>{
   toggleTextBtn.classList.toggle('active', !visible);
 });
 window.addEventListener('resize', resizeCanvas);
+function flushSave(){
+  clearTimeout(saveTimer);
+  saveCurrentNote();
+}
+window.addEventListener('beforeunload', flushSave);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'hidden') flushSave();
+});
 
 // --- Calendar view ---
 const HOLIDAYS = {
