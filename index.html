@@ -84,6 +84,7 @@ body{
 .spacer{flex:1;}
 #canvasWrap{flex:1; position:relative; overflow:hidden; background:var(--paper);}
 #drawCanvas{position:absolute; inset:0; touch-action:none; width:100%; height:100%;}
+#textCanvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none;}
 #emptyState{
   position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   flex-direction:column; gap:10px; color:var(--muted); font-size:1.1rem; text-align:center; padding:20px;
@@ -158,6 +159,8 @@ body{
     <button class="tbtn" id="textBtn">⌨️ テキスト入力</button>
     <button class="tbtn" id="ocrBtn">🔤 活字に変換</button>
     <button class="tbtn" id="visionSettingsBtn">Vision設定</button>
+    <button class="tbtn active" id="toggleInkBtn">✏️ 画像レイヤー</button>
+    <button class="tbtn active" id="toggleTextBtn">🔤 テキストレイヤー</button>
     <div class="spacer"></div>
     <span id="driveStatus">未接続</span>
     <button class="tbtn" id="driveSaveBtn" style="display:none;">Driveに保存</button>
@@ -177,6 +180,7 @@ body{
   </div>
   <div id="canvasWrap">
     <canvas id="drawCanvas"></canvas>
+    <canvas id="textCanvas"></canvas>
     <input id="textInputOverlay" type="text" style="display:none;position:absolute;font-family:'Kalam',sans-serif;font-size:26px;color:var(--ink);background:transparent;border:none;border-bottom:1.5px dashed var(--muted);outline:none;padding:0;min-width:200px;">
     <div id="emptyState" style="display:none;">
       <div>まだノートがありません</div>
@@ -231,6 +235,8 @@ let saveTimer = null;
 
 const canvas = document.getElementById('drawCanvas');
 const ctx = canvas.getContext('2d');
+const textCanvas = document.getElementById('textCanvas');
+const textCtx = textCanvas.getContext('2d');
 const sizeRange = document.getElementById('sizeRange');
 const titleInput = document.getElementById('titleInput');
 const noteList = document.getElementById('noteList');
@@ -251,12 +257,16 @@ function persist(){
 function resizeCanvas(){
   const rect = canvas.parentElement.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  const prevData = canvas.width ? canvas.toDataURL() : null;
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
   canvas.style.width = rect.width + 'px';
   canvas.style.height = rect.height + 'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  textCanvas.width = rect.width * dpr;
+  textCanvas.height = rect.height * dpr;
+  textCanvas.style.width = rect.width + 'px';
+  textCanvas.style.height = rect.height + 'px';
+  textCtx.setTransform(dpr,0,0,dpr,0,0);
   drawRuledLines();
   redrawStrokes();
 }
@@ -280,15 +290,7 @@ function redrawStrokes(){
   ctx.clearRect(0,0,w,h);
   drawRuledLines();
   for(const s of strokes){
-    if(s.tool === 'text'){
-      ctx.save();
-      ctx.fillStyle = s.color;
-      ctx.font = (s.size||26) + "px 'Kalam', sans-serif";
-      ctx.textBaseline = 'top';
-      ctx.fillText(s.text, s.x, s.y);
-      ctx.restore();
-      continue;
-    }
+    if(s.tool === 'text') continue;
     if(s.points.length < 1) continue;
     ctx.save();
     ctx.globalCompositeOperation = s.tool === 'eraser' ? 'destination-out' : 'source-over';
@@ -301,6 +303,16 @@ function redrawStrokes(){
     for(let i=1;i<s.points.length;i++) ctx.lineTo(s.points[i].x, s.points[i].y);
     ctx.stroke();
     ctx.restore();
+  }
+  textCtx.clearRect(0,0,w,h);
+  for(const s of strokes){
+    if(s.tool !== 'text') continue;
+    textCtx.save();
+    textCtx.fillStyle = s.color;
+    textCtx.font = (s.size||26) + "px 'Kalam', sans-serif";
+    textCtx.textBaseline = 'top';
+    textCtx.fillText(s.text, s.x, s.y);
+    textCtx.restore();
   }
 }
 
@@ -361,6 +373,7 @@ function makeThumb(){
   tc.fillRect(0,0,88,64);
   const w = canvas.width/(window.devicePixelRatio||1), h = canvas.height/(window.devicePixelRatio||1);
   tc.drawImage(canvas, 0,0, w, h, 0,0,88,64);
+  tc.drawImage(textCanvas, 0,0, w, h, 0,0,88,64);
   return t.toDataURL();
 }
 
@@ -453,6 +466,18 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
   if(confirm('このノートを全部消しますか？')){ strokes=[]; undone=[]; textCursorY=60; redrawStrokes(); scheduleSave(); }
 });
 menuBtn.addEventListener('click', ()=> sidebar.classList.toggle('open'));
+const toggleInkBtn = document.getElementById('toggleInkBtn');
+const toggleTextBtn = document.getElementById('toggleTextBtn');
+toggleInkBtn.addEventListener('click', ()=>{
+  const visible = canvas.style.visibility !== 'hidden';
+  canvas.style.visibility = visible ? 'hidden' : 'visible';
+  toggleInkBtn.classList.toggle('active', !visible);
+});
+toggleTextBtn.addEventListener('click', ()=>{
+  const visible = textCanvas.style.visibility !== 'hidden';
+  textCanvas.style.visibility = visible ? 'hidden' : 'visible';
+  toggleTextBtn.classList.toggle('active', !visible);
+});
 window.addEventListener('resize', resizeCanvas);
 
 // --- Calendar view ---
@@ -625,13 +650,7 @@ function renderStrokesForOCR(){
   tctx.fillStyle = '#FFFFFF';
   tctx.fillRect(0,0,w,h);
   for(const s of strokes){
-    if(s.tool === 'text'){
-      tctx.fillStyle = '#000000';
-      tctx.font = (s.size||26) + "px sans-serif";
-      tctx.textBaseline = 'top';
-      tctx.fillText(s.text, s.x, s.y);
-      continue;
-    }
+    if(s.tool === 'text') continue;
     if(!s.points || s.points.length < 1) continue;
     tctx.save();
     tctx.globalCompositeOperation = s.tool === 'eraser' ? 'destination-out' : 'source-over';
