@@ -72,6 +72,9 @@ body{
   background:transparent; border:none; outline:none; width:180px; border-bottom:1.5px dashed transparent;
 }
 #titleInput:focus{border-bottom-color:var(--muted);}
+#titleInput:hover{border-bottom-color:var(--muted);}
+.note-item.active .title{cursor:text;}
+.note-item.active .title:hover{text-decoration:underline dashed; text-underline-offset:3px;}
 .swatch{width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;}
 .swatch.active{border-color:var(--ink);}
 #sizeRange{width:80px;}
@@ -405,6 +408,31 @@ document.getElementById('searchInput').addEventListener('input', (e)=>{
   renderList();
 });
 
+function startRename(li, n){
+  const titleEl = li.querySelector('.title');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = n.title || '';
+  input.style.cssText = 'width:100%;font-family:inherit;font-size:0.95rem;padding:2px 4px;border:1px solid var(--accent);border-radius:4px;background:var(--paper);color:var(--text);';
+  titleEl.replaceWith(input);
+  input.focus(); input.select();
+  let done = false;
+  const finish = (save)=>{
+    if(done) return; done = true;
+    if(save){
+      n.title = input.value.trim() || '無題のノート';
+      persist();
+      if(n.id === currentId) titleInput.value = n.title;
+    }
+    renderList();
+  };
+  input.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){ e.preventDefault(); finish(true); }
+    else if(e.key === 'Escape'){ finish(false); }
+  });
+  input.addEventListener('blur', ()=> finish(true));
+}
+
 function renderList(){
   noteList.innerHTML = '';
   emptyState.style.display = notes.length ? 'none':'flex';
@@ -418,7 +446,12 @@ function renderList(){
     li.className = 'note-item' + (n.id===currentId ? ' active':'');
     const d = new Date(n.updatedAt);
     li.innerHTML = `<img src="${n.thumb||''}" alt=""><div class="meta"><div class="title">${escapeHtml(n.title||'無題')}</div><div class="date">${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}</div></div><button class="del" title="削除">×</button>`;
-    li.addEventListener('click', (ev)=>{ if(ev.target.classList.contains('del')) return; selectNote(n.id); sidebar.classList.remove('open'); });
+    if(n.id===currentId) li.querySelector('.title').title = 'クリックして名前を変更';
+    li.addEventListener('click', (ev)=>{
+      if(ev.target.classList.contains('del') || ev.target.tagName==='INPUT') return;
+      if(ev.target.classList.contains('title') && n.id===currentId){ startRename(li, n); return; }
+      selectNote(n.id); sidebar.classList.remove('open');
+    });
     li.querySelector('.del').addEventListener('click', ()=>{ deleteNote(n.id); });
     noteList.appendChild(li);
   }
@@ -452,6 +485,8 @@ function deleteNote(id){
   } else { renderList(); }
 }
 
+titleInput.addEventListener('focus', ()=> titleInput.select());
+titleInput.title = 'クリックして名前を変更';
 titleInput.addEventListener('input', ()=>{
   const n = notes.find(x=>x.id===currentId);
   if(n){ n.title = titleInput.value; clearTimeout(saveTimer); saveTimer=setTimeout(saveCurrentNote,400); }
