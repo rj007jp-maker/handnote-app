@@ -72,6 +72,7 @@ body{
   background:transparent; border:none; outline:none; width:180px; border-bottom:1.5px dashed transparent;
 }
 #titleInput:focus{border-bottom-color:var(--muted);}
+#dateInput{font-family:system-ui,sans-serif; font-size:0.8rem; padding:4px 6px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--text);}
 #titleInput:hover{border-bottom-color:var(--muted);}
 .note-item.active .title{cursor:text;}
 .note-item.active .title:hover{text-decoration:underline dashed; text-underline-offset:3px;}
@@ -151,6 +152,7 @@ body{
   <div id="toolbar">
     <button id="menuBtn">☰</button>
     <input id="titleInput" placeholder="ノートのタイトル" />
+    <input id="dateInput" type="date" title="ノートの日付(カレンダーの日付と同じ)">
     <button class="swatch active" data-color="#20233F" style="background:#20233F"></button>
     <button class="swatch" data-color="#33518F" style="background:#33518F"></button>
     <button class="swatch" data-color="#9C3B3B" style="background:#9C3B3B"></button>
@@ -235,6 +237,7 @@ let drawing = false;
 let currentColor = '#20233F';
 let eraser = false;
 let saveTimer = null;
+let dirty = false;
 
 const canvas = document.getElementById('drawCanvas');
 const ctx = canvas.getContext('2d');
@@ -242,6 +245,20 @@ const textCanvas = document.getElementById('textCanvas');
 const textCtx = textCanvas.getContext('2d');
 const sizeRange = document.getElementById('sizeRange');
 const titleInput = document.getElementById('titleInput');
+const dateInput = document.getElementById('dateInput');
+function toDateValue(ts){
+  const d = new Date(ts);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function setDateInput(n){ dateInput.value = n ? toDateValue(n.createdAt || n.updatedAt) : ''; }
+dateInput.addEventListener('change', ()=>{
+  const n = notes.find(x=>x.id===currentId);
+  if(!n || !dateInput.value) return;
+  const [y,m,d] = dateInput.value.split('-').map(Number);
+  n.createdAt = new Date(y, m-1, d, 12, 0, 0).getTime();
+  persist();
+  renderList();
+});
 const noteList = document.getElementById('noteList');
 const emptyState = document.getElementById('emptyState');
 const menuBtn = document.getElementById('menuBtn');
@@ -251,6 +268,7 @@ function loadNotes(){
   try{
     const raw = localStorage.getItem(DB_KEY);
     notes = raw ? JSON.parse(raw) : [];
+    for(const n of notes){ if(!n.createdAt) n.createdAt = n.updatedAt || Date.now(); }
   }catch(e){ notes = []; }
 }
 function persist(){
@@ -367,12 +385,14 @@ canvas.addEventListener('pointerleave', endStroke);
 canvas.addEventListener('pointercancel', endStroke);
 
 function scheduleSave(){
+  dirty = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveCurrentNote, 400);
 }
 function saveCurrentNote(){
   const note = notes.find(n=>n.id===currentId);
-  if(!note) return;
+  if(!note || !dirty) return;
+  dirty = false;
   note.strokes = strokes;
   note.updatedAt = Date.now();
   note.thumb = makeThumb();
@@ -437,15 +457,15 @@ function renderList(){
   noteList.innerHTML = '';
   emptyState.style.display = notes.length ? 'none':'flex';
   canvas.style.display = notes.length ? 'block':'none';
-  const sorted = [...notes].sort((a,b)=>b.updatedAt-a.updatedAt).filter(n=>noteMatchesQuery(n, searchQuery));
+  const sorted = [...notes].sort((a,b)=>((b.createdAt||b.updatedAt)-(a.createdAt||a.updatedAt)) || (b.updatedAt-a.updatedAt)).filter(n=>noteMatchesQuery(n, searchQuery));
   if(searchQuery && !sorted.length){
     noteList.innerHTML = '<p style="font-size:0.85rem;color:var(--muted);font-family:system-ui,sans-serif;padding:6px 4px;">見つかりませんでした</p>';
   }
   for(const n of sorted){
     const li = document.createElement('li');
     li.className = 'note-item' + (n.id===currentId ? ' active':'');
-    const d = new Date(n.updatedAt);
-    li.innerHTML = `<img src="${n.thumb||''}" alt=""><div class="meta"><div class="title">${escapeHtml(n.title||'無題')}</div><div class="date">${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}</div></div><button class="del" title="削除">×</button>`;
+    const d = new Date(n.createdAt || n.updatedAt);
+    li.innerHTML = `<img src="${n.thumb||''}" alt=""><div class="meta"><div class="title">${escapeHtml(n.title||'無題')}</div><div class="date">${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}</div></div><button class="del" title="削除">×</button>`;
     if(n.id===currentId) li.querySelector('.title').title = 'クリックして名前を変更';
     li.addEventListener('click', (ev)=>{
       if(ev.target.classList.contains('del') || ev.target.tagName==='INPUT') return;
@@ -466,6 +486,7 @@ function selectNote(id){
   undone = [];
   textCursorY = computeTextCursorY();
   titleInput.value = n ? (n.title||'') : '';
+  setDateInput(n);
   resizeCanvas();
   renderList();
 }
@@ -481,7 +502,7 @@ function deleteNote(id){
   persist();
   if(currentId===id){
     currentId = null; strokes=[];
-    if(notes.length){ selectNote(notes[0].id); } else { titleInput.value=''; resizeCanvas(); renderList(); }
+    if(notes.length){ selectNote(notes[0].id); } else { titleInput.value=''; setDateInput(null); resizeCanvas(); renderList(); }
   } else { renderList(); }
 }
 
@@ -489,7 +510,7 @@ titleInput.addEventListener('focus', ()=> titleInput.select());
 titleInput.title = 'クリックして名前を変更';
 titleInput.addEventListener('input', ()=>{
   const n = notes.find(x=>x.id===currentId);
-  if(n){ n.title = titleInput.value; clearTimeout(saveTimer); saveTimer=setTimeout(saveCurrentNote,400); }
+  if(n){ n.title = titleInput.value; dirty = true; clearTimeout(saveTimer); saveTimer=setTimeout(saveCurrentNote,400); }
 });
 document.getElementById('newNoteBtn').addEventListener('click', newNote);
 document.querySelectorAll('.swatch').forEach(sw=>{
@@ -616,6 +637,7 @@ function createNoteForDate(year, month, day){
   strokes = [];
   undone = [];
   titleInput.value = n.title;
+  setDateInput(n);
   textCursorY = 60;
   resizeCanvas();
   renderList();
