@@ -82,7 +82,7 @@ body{
 .tbtn.active{background:var(--accent); color:var(--paper); border-color:var(--accent);}
 .tbtn:hover:not(.active){background:var(--paper);}
 .spacer{flex:1;}
-#canvasWrap{flex:1; position:relative; overflow:hidden; background:var(--paper);}
+#canvasWrap{flex:1; position:relative; overflow-x:hidden; overflow-y:auto; background:var(--paper);}
 #drawCanvas{position:absolute; inset:0; touch-action:none; width:100%; height:100%;}
 #textCanvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none;}
 #emptyState{
@@ -254,21 +254,32 @@ function persist(){
   try{ localStorage.setItem(DB_KEY, JSON.stringify(notes)); }catch(e){}
 }
 
+function neededHeight(){
+  let maxY = 0;
+  for(const s of strokes){ if(s.tool==='text' && s.y+36>maxY) maxY = s.y+36; }
+  return maxY + 120;
+}
 function resizeCanvas(){
-  const rect = canvas.parentElement.getBoundingClientRect();
+  const wrap = canvas.parentElement;
+  const rect = wrap.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  canvas.style.width = rect.width + 'px';
-  canvas.style.height = rect.height + 'px';
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  textCanvas.width = rect.width * dpr;
-  textCanvas.height = rect.height * dpr;
-  textCanvas.style.width = rect.width + 'px';
-  textCanvas.style.height = rect.height + 'px';
-  textCtx.setTransform(dpr,0,0,dpr,0,0);
+  const w = rect.width, h = Math.max(wrap.clientHeight, neededHeight());
+  for(const [c, cx] of [[canvas, ctx], [textCanvas, textCtx]]){
+    c.width = w * dpr;
+    c.height = h * dpr;
+    c.style.width = w + 'px';
+    c.style.height = h + 'px';
+    cx.setTransform(dpr,0,0,dpr,0,0);
+  }
   drawRuledLines();
   redrawStrokes();
+}
+function afterTextAdded(){
+  resizeCanvas();
+  const wrap = canvas.parentElement;
+  const bottom = textCursorY + 60;
+  if(bottom > wrap.scrollTop + wrap.clientHeight) wrap.scrollTop = bottom - wrap.clientHeight;
+  scheduleSave();
 }
 function drawRuledLines(){
   const w = canvas.width / (window.devicePixelRatio||1);
@@ -371,9 +382,10 @@ function makeThumb(){
   const tc = t.getContext('2d');
   tc.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim();
   tc.fillRect(0,0,88,64);
-  const w = canvas.width/(window.devicePixelRatio||1), h = canvas.height/(window.devicePixelRatio||1);
-  tc.drawImage(canvas, 0,0, w, h, 0,0,88,64);
-  tc.drawImage(textCanvas, 0,0, w, h, 0,0,88,64);
+  const dpr = window.devicePixelRatio || 1;
+  const sh = Math.min(canvas.height, canvas.parentElement.clientHeight * dpr);
+  tc.drawImage(canvas, 0,0, canvas.width, sh, 0,0,88,64);
+  tc.drawImage(textCanvas, 0,0, textCanvas.width, sh, 0,0,88,64);
   return t.toDataURL();
 }
 
@@ -459,11 +471,11 @@ document.getElementById('eraserBtn').addEventListener('click', (e)=>{
   e.target.classList.toggle('active', eraser);
 });
 document.getElementById('undoBtn').addEventListener('click', ()=>{
-  if(strokes.length){ undone.push(strokes.pop()); redrawStrokes(); scheduleSave(); }
+  if(strokes.length){ undone.push(strokes.pop()); textCursorY = computeTextCursorY(); resizeCanvas(); scheduleSave(); }
 });
 document.getElementById('clearBtn').addEventListener('click', ()=>{
   if(!currentId) return;
-  if(confirm('このノートを全部消しますか？')){ strokes=[]; undone=[]; textCursorY=60; redrawStrokes(); scheduleSave(); }
+  if(confirm('このノートを全部消しますか？')){ strokes=[]; undone=[]; textCursorY=60; resizeCanvas(); scheduleSave(); }
 });
 menuBtn.addEventListener('click', ()=> sidebar.classList.toggle('open'));
 const toggleInkBtn = document.getElementById('toggleInkBtn');
@@ -639,14 +651,11 @@ document.getElementById('ocrInsert').addEventListener('click', ()=>{
   const lines = ocrResultText.value.split('\n').map(l=>l.trim()).filter(Boolean);
   strokes = strokes.filter(s => s.tool === 'text');
   textCursorY = computeTextCursorY();
-  const h = canvas.height/(window.devicePixelRatio||1);
   for(const line of lines){
-    if(textCursorY > h - 30) textCursorY = 60;
     strokes.push({tool:'text', text: line, x:24, y:textCursorY, color: currentColor, size:26});
     textCursorY += 36;
   }
-  redrawStrokes();
-  scheduleSave();
+  afterTextAdded();
   ocrModal.classList.remove('open');
 });
 
@@ -712,17 +721,16 @@ function commitTextOverlay(){
   textInputOverlay.value = '';
   const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
   if(!lines.length) return;
-  const h = canvas.height/(window.devicePixelRatio||1);
+  textCursorY = computeTextCursorY();
   for(const line of lines){
-    if(textCursorY > h - 30) textCursorY = 60;
     strokes.push({tool:'text', text: line, x:24, y:textCursorY, color: currentColor, size:26});
     textCursorY += 36;
   }
-  redrawStrokes();
-  scheduleSave();
+  afterTextAdded();
 }
 textBtn.addEventListener('click', ()=>{
   if(!currentId) return;
+  textCursorY = computeTextCursorY();
   textInputOverlay.style.left = '20px';
   textInputOverlay.style.top = (textCursorY - 4) + 'px';
   textInputOverlay.style.display = 'block';
@@ -755,12 +763,10 @@ voiceBtn.addEventListener('click', ()=>{
   r.onresult = (e)=>{
     const text = e.results[0][0].transcript;
     if(text){
-      const h = canvas.height/(window.devicePixelRatio||1);
-      if(textCursorY > h - 30) textCursorY = 60;
+      textCursorY = computeTextCursorY();
       strokes.push({tool:'text', text, x:24, y:textCursorY, color: currentColor, size:26});
       textCursorY += 36;
-      redrawStrokes();
-      scheduleSave();
+      afterTextAdded();
     }
   };
   r.onerror = ()=>{ voiceBtn.textContent = '🎤 音声入力'; };
