@@ -103,6 +103,16 @@ body{
   #titleInput{width:110px;}
 }
 #menuBtn{display:none; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:7px 10px; cursor:pointer; font-size:1rem;}
+#toolbarToggle{
+  display:none; position:absolute; top:calc(6px + env(safe-area-inset-top,0px)); right:8px; z-index:6;
+  background:var(--card); border:1px solid var(--line); border-radius:50%; width:32px; height:32px;
+  align-items:center; justify-content:center; cursor:pointer; font-size:1rem; color:var(--text);
+  box-shadow:0 1px 4px rgba(0,0,0,.15);
+}
+@media (max-width:640px){
+  #toolbarToggle{display:flex;}
+  #toolbar.collapsed{display:none;}
+}
 #driveStatus{font-size:0.8rem; color:var(--muted); font-family:system-ui,sans-serif; margin-right:4px;}
 #driveModal{
   position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:50;
@@ -187,6 +197,7 @@ body{
     </div>
   </div>
   <div id="canvasWrap">
+    <button id="toolbarToggle" title="ツールバーの表示切替">⌄</button>
     <canvas id="drawCanvas"></canvas>
     <canvas id="textCanvas"></canvas>
     <textarea id="textInputOverlay" style="display:none;position:absolute;font-family:'Kalam',sans-serif;font-size:26px;line-height:36px;color:var(--ink);background:transparent;border:none;border-bottom:1.5px dashed var(--muted);outline:none;padding:0;min-width:240px;max-width:80%;resize:none;overflow:hidden;" rows="1"></textarea>
@@ -573,6 +584,12 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
   if(confirm('このノートを全部消しますか？')){ strokes=[]; undone=[]; textCursorY=60; resizeCanvas(); scheduleSave(); }
 });
 menuBtn.addEventListener('click', ()=> sidebar.classList.toggle('open'));
+const toolbarEl = document.getElementById('toolbar');
+const toolbarToggle = document.getElementById('toolbarToggle');
+toolbarToggle.addEventListener('click', ()=>{
+  const collapsed = toolbarEl.classList.toggle('collapsed');
+  toolbarToggle.textContent = collapsed ? '⌃' : '⌄';
+});
 const toggleInkBtn = document.getElementById('toggleInkBtn');
 const toggleTextBtn = document.getElementById('toggleTextBtn');
 toggleInkBtn.addEventListener('click', ()=>{
