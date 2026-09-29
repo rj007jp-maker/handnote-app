@@ -288,6 +288,7 @@ function loadNotes(){
 }
 function persist(){
   try{ localStorage.setItem(DB_KEY, JSON.stringify(notes)); }catch(e){}
+  scheduleSyncPush();
 }
 
 function neededHeight(){
@@ -889,6 +890,77 @@ const CONNECTED_KEY = 'handnote_gdrive_connected';
 const DEFAULT_CLIENT_ID = '203581774802-qnf8l2f131ucqtb8pnv37fd66k5htmme.apps.googleusercontent.com';
 if(!localStorage.getItem(CLIENT_ID_KEY)) localStorage.setItem(CLIENT_ID_KEY, DEFAULT_CLIENT_ID);
 let accessToken = null;
+const SYNC_FILE_NAME = 'handnote-sync-data.json';
+let syncFileId = null;
+let syncPushTimer = null;
+let syncInProgress = false;
+function scheduleSyncPush(){
+  if(!accessToken) return;
+  clearTimeout(syncPushTimer);
+  syncPushTimer = setTimeout(pushToDrive, 2500);
+}
+async function findOrCreateSyncFile(){
+  if(syncFileId) return syncFileId;
+  const q = encodeURIComponent(`name='${SYNC_FILE_NAME}' and trashed=false`);
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
+    headers:{Authorization:'Bearer '+accessToken}
+  });
+  const data = await res.json();
+  if(data.files && data.files.length){ syncFileId = data.files[0].id; return syncFileId; }
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify({name:SYNC_FILE_NAME, mimeType:'application/json'})], {type:'application/json'}));
+  form.append('file', new Blob([JSON.stringify(notes)], {type:'application/json'}));
+  const createRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method:'POST', headers:{Authorization:'Bearer '+accessToken}, body: form
+  });
+  const created = await createRes.json();
+  syncFileId = created.id;
+  return syncFileId;
+}
+function mergeNotes(remote){
+  const byId = {};
+  for(const n of notes) byId[n.id] = n;
+  for(const rn of remote){
+    const local = byId[rn.id];
+    if(!local || (rn.updatedAt||0) > (local.updatedAt||0)) byId[rn.id] = rn;
+  }
+  notes = Object.values(byId);
+}
+async function pullFromDrive(){
+  if(!accessToken || syncInProgress) return;
+  syncInProgress = true;
+  try{
+    const id = await findOrCreateSyncFile();
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
+      headers:{Authorization:'Bearer '+accessToken}
+    });
+    if(res.ok){
+      const remote = await res.json();
+      if(Array.isArray(remote) && remote.length){
+        mergeNotes(remote);
+        try{ localStorage.setItem(DB_KEY, JSON.stringify(notes)); }catch(e){}
+        if(currentId){
+          const n = notes.find(x=>x.id===currentId);
+          if(n){ strokes = n.strokes||[]; textCursorY = computeTextCursorY(); resizeCanvas(); }
+        }
+        renderList();
+      }
+    }
+  }catch(e){}
+  syncInProgress = false;
+  pushToDrive();
+}
+async function pushToDrive(){
+  if(!accessToken || syncInProgress) return;
+  try{
+    const id = await findOrCreateSyncFile();
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, {
+      method:'PATCH',
+      headers:{Authorization:'Bearer '+accessToken, 'Content-Type':'application/json'},
+      body: JSON.stringify(notes)
+    });
+  }catch(e){}
+}
 let tokenClient = null;
 const driveStatus = document.getElementById('driveStatus');
 const driveSaveBtn = document.getElementById('driveSaveBtn');
@@ -920,9 +992,11 @@ function initTokenClient(){
       }
       accessToken = resp.access_token;
       localStorage.setItem(CONNECTED_KEY, '1');
-      driveStatus.textContent = 'Drive接続済み';
+      driveStatus.textContent = 'Drive接続済み・同期中...';
       driveAuthBtn.textContent = 'ログアウト';
       driveSaveBtn.style.display = 'inline-block';
+      syncFileId = null;
+      pullFromDrive().then(()=>{ driveStatus.textContent = 'Drive接続済み'; });
     }
   });
   if(localStorage.getItem(CONNECTED_KEY)){
@@ -934,6 +1008,7 @@ driveAuthBtn.addEventListener('click', ()=>{
     google.accounts.oauth2.revoke(accessToken, ()=>{});
     accessToken = null;
     localStorage.removeItem(CONNECTED_KEY);
+    syncFileId = null;
     driveStatus.textContent = '未接続';
     driveAuthBtn.textContent = 'Googleでログイン';
     driveSaveBtn.style.display = 'none';
