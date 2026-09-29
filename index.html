@@ -38,7 +38,10 @@ body{
 #sidebar{
   width:220px; min-width:180px; background:var(--sidebar); border-right:1px solid var(--line);
   display:flex; flex-direction:column; padding:calc(14px + env(safe-area-inset-top,0px)) 12px 12px;
-  overflow-y:auto;
+  overflow-y:auto; transition:width .2s ease, min-width .2s ease, padding .2s ease, border-color .2s ease;
+}
+@media (min-width:641px){
+  #sidebar.auto-collapsed{width:0; min-width:0; padding-left:0; padding-right:0; border-color:transparent; overflow:hidden;}
 }
 #sidebar h1{font-size:1.3rem; margin:0 0 12px 4px; font-weight:700; color:var(--ink);}
 #newNoteBtn{
@@ -86,7 +89,7 @@ body{
 .tbtn.active{background:var(--accent); color:var(--paper); border-color:var(--accent);}
 .tbtn:hover:not(.active){background:var(--paper);}
 .spacer{flex:1;}
-#canvasWrap{flex:1; position:relative; overflow-x:hidden; overflow-y:auto; background:var(--paper);}
+#canvasWrap{flex:1; position:relative; overflow-x:hidden; overflow-y:auto; scrollbar-gutter:stable; background:var(--paper);}
 #drawCanvas{position:absolute; inset:0; touch-action:none; width:100%; height:100%;}
 #textCanvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none;}
 #emptyState{
@@ -284,7 +287,7 @@ function resizeCanvas(){
   const wrap = canvas.parentElement;
   const rect = wrap.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  const w = rect.width, h = Math.max(wrap.clientHeight, neededHeight());
+  const w = wrap.clientWidth, h = Math.max(wrap.clientHeight, neededHeight());
   for(const [c, cx] of [[canvas, ctx], [textCanvas, textCtx]]){
     c.width = w * dpr;
     c.height = h * dpr;
@@ -355,6 +358,40 @@ function pointerPos(e){
 
 let currentStroke = null;
 let textCursorY = 60;
+function wrapText(text, maxW){
+  textCtx.save();
+  textCtx.font = "26px 'Kalam', sans-serif";
+  const NOSTART = '、。，．,.）)」』】！？!?：；:;・ー…';
+  const out = [];
+  let line = '';
+  for(const ch of text){
+    const test = line + ch;
+    if(line && textCtx.measureText(test).width > maxW && !NOSTART.includes(ch)){
+      const sp = line.lastIndexOf(' ');
+      if(/[A-Za-z0-9]/.test(ch) && sp > 0){
+        out.push(line.slice(0, sp));
+        line = line.slice(sp + 1) + ch;
+      } else {
+        out.push(line);
+        line = ch.trim() ? ch : '';
+      }
+    } else {
+      line = test;
+    }
+  }
+  if(line) out.push(line);
+  textCtx.restore();
+  return out;
+}
+function addTextLines(lines){
+  const maxW = Math.max(120, canvas.parentElement.clientWidth - 48);
+  for(const line of lines){
+    for(const part of wrapText(line, maxW)){
+      strokes.push({tool:'text', text: part, x:24, y:textCursorY, color: currentColor, size:26});
+      textCursorY += 36;
+    }
+  }
+}
 function computeTextCursorY(){
   let maxY = 24;
   for(const s of strokes){ if(s.tool==='text' && s.y>maxY) maxY = s.y; }
@@ -363,6 +400,7 @@ function computeTextCursorY(){
 canvas.addEventListener('pointerdown', e=>{
   if(!currentId) return;
   drawing = true;
+  sidebar.classList.add('auto-collapsed');
   undone = [];
   const p = pointerPos(e);
   currentStroke = {tool: eraser ? 'eraser':'pen', color: currentColor, size: Number(sizeRange.value)*(eraser?3:1), points:[p]};
@@ -378,6 +416,7 @@ function endStroke(){
   if(!drawing) return;
   drawing = false;
   currentStroke = null;
+  sidebar.classList.remove('auto-collapsed');
   scheduleSave();
 }
 canvas.addEventListener('pointerup', endStroke);
@@ -708,10 +747,7 @@ document.getElementById('ocrInsert').addEventListener('click', ()=>{
   const lines = ocrResultText.value.split('\n').map(l=>l.trim()).filter(Boolean);
   strokes = strokes.filter(s => s.tool === 'text');
   textCursorY = computeTextCursorY();
-  for(const line of lines){
-    strokes.push({tool:'text', text: line, x:24, y:textCursorY, color: currentColor, size:26});
-    textCursorY += 36;
-  }
+  addTextLines(lines);
   afterTextAdded();
   ocrModal.classList.remove('open');
 });
@@ -776,17 +812,16 @@ function commitTextOverlay(){
   const raw = textInputOverlay.value;
   textInputOverlay.style.display = 'none';
   textInputOverlay.value = '';
+  sidebar.classList.remove('auto-collapsed');
   const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
   if(!lines.length) return;
   textCursorY = computeTextCursorY();
-  for(const line of lines){
-    strokes.push({tool:'text', text: line, x:24, y:textCursorY, color: currentColor, size:26});
-    textCursorY += 36;
-  }
+  addTextLines(lines);
   afterTextAdded();
 }
 textBtn.addEventListener('click', ()=>{
   if(!currentId) return;
+  sidebar.classList.add('auto-collapsed');
   textCursorY = computeTextCursorY();
   textInputOverlay.style.left = '20px';
   textInputOverlay.style.top = (textCursorY - 4) + 'px';
@@ -795,7 +830,7 @@ textBtn.addEventListener('click', ()=>{
 });
 textInputOverlay.addEventListener('keydown', (e)=>{
   if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); commitTextOverlay(); }
-  else if(e.key === 'Escape'){ textInputOverlay.style.display='none'; textInputOverlay.value=''; }
+  else if(e.key === 'Escape'){ textInputOverlay.style.display='none'; textInputOverlay.value=''; sidebar.classList.remove('auto-collapsed'); }
 });
 textInputOverlay.addEventListener('input', ()=>{
   textInputOverlay.style.height = 'auto';
@@ -821,8 +856,7 @@ voiceBtn.addEventListener('click', ()=>{
     const text = e.results[0][0].transcript;
     if(text){
       textCursorY = computeTextCursorY();
-      strokes.push({tool:'text', text, x:24, y:textCursorY, color: currentColor, size:26});
-      textCursorY += 36;
+      addTextLines([text]);
       afterTextAdded();
     }
   };
