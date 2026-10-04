@@ -176,6 +176,7 @@ body{
     <button class="tbtn" id="clearBtn">全消去</button>
     <button class="tbtn" id="voiceBtn">🎤 音声入力</button>
     <button class="tbtn" id="textBtn">⌨️ テキスト入力</button>
+    <button class="tbtn" id="textEditBtn">✎ 文字編集</button>
     <button class="tbtn" id="ocrBtn">🔤 活字に変換</button>
     <button class="tbtn" id="visionSettingsBtn">Vision設定</button>
     <button class="tbtn active" id="toggleInkBtn">✏️ 画像レイヤー</button>
@@ -422,6 +423,7 @@ function computeTextCursorY(){
 }
 canvas.addEventListener('pointerdown', e=>{
   if(!currentId) return;
+  if(textEditMode){ handleTextEditTap(pointerPos(e)); return; }
   drawing = true;
   sidebar.classList.add('auto-collapsed');
   undone = [];
@@ -836,13 +838,66 @@ ocrBtn.addEventListener('click', async ()=>{
 
 // --- Keyboard text input ---
 const textBtn = document.getElementById('textBtn');
+const textEditBtn = document.getElementById('textEditBtn');
 const textInputOverlay = document.getElementById('textInputOverlay');
+let textEditMode = false;
+let editingStrokeIndex = null;
+textEditBtn.addEventListener('click', ()=>{
+  textEditMode = !textEditMode;
+  textEditBtn.classList.toggle('active', textEditMode);
+  canvas.style.cursor = textEditMode ? 'text' : '';
+});
+function handleTextEditTap(p){
+  let found = -1;
+  for(let i=strokes.length-1; i>=0; i--){
+    const s = strokes[i];
+    if(s.tool !== 'text') continue;
+    textCtx.font = (s.size||26) + "px 'Kalam', sans-serif";
+    const w = textCtx.measureText(s.text).width;
+    if(p.x >= s.x-4 && p.x <= s.x + w + 10 && p.y >= s.y-4 && p.y <= s.y + (s.size||26)*1.3){
+      found = i; break;
+    }
+  }
+  if(found === -1) return;
+  editingStrokeIndex = found;
+  const s = strokes[found];
+  sidebar.classList.add('auto-collapsed');
+  textInputOverlay.value = s.text;
+  textInputOverlay.style.left = s.x + 'px';
+  textInputOverlay.style.top = (s.y - 4) + 'px';
+  textInputOverlay.style.display = 'block';
+  textInputOverlay.style.height = 'auto';
+  textInputOverlay.focus();
+  textInputOverlay.select();
+  textInputOverlay.style.height = textInputOverlay.scrollHeight + 'px';
+}
 function commitTextOverlay(){
   const raw = textInputOverlay.value;
   textInputOverlay.style.display = 'none';
   textInputOverlay.value = '';
   sidebar.classList.remove('auto-collapsed');
   const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+
+  if(editingStrokeIndex !== null){
+    const idx = editingStrokeIndex;
+    editingStrokeIndex = null;
+    const orig = strokes[idx];
+    const origY = orig.y;
+    const delta = (lines.length - 1) * 36;
+    strokes.splice(idx, 1);
+    for(const s of strokes){ if(s.tool==='text' && s.y > origY) s.y += delta; }
+    let y = origY;
+    const newStrokes = lines.map(line=>{
+      const ns = {tool:'text', text: line, x: orig.x, y, color: orig.color, size: orig.size};
+      y += 36;
+      return ns;
+    });
+    strokes.splice(idx, 0, ...newStrokes);
+    textCursorY = computeTextCursorY();
+    afterTextAdded();
+    return;
+  }
+
   if(!lines.length) return;
   textCursorY = computeTextCursorY();
   addTextLines(lines);
@@ -859,7 +914,7 @@ textBtn.addEventListener('click', ()=>{
 });
 textInputOverlay.addEventListener('keydown', (e)=>{
   if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); commitTextOverlay(); }
-  else if(e.key === 'Escape'){ textInputOverlay.style.display='none'; textInputOverlay.value=''; sidebar.classList.remove('auto-collapsed'); }
+  else if(e.key === 'Escape'){ textInputOverlay.style.display='none'; textInputOverlay.value=''; editingStrokeIndex = null; sidebar.classList.remove('auto-collapsed'); }
 });
 textInputOverlay.addEventListener('input', ()=>{
   textInputOverlay.style.height = 'auto';
