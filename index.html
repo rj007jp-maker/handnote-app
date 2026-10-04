@@ -166,9 +166,9 @@ body{
     <button id="menuBtn">☰</button>
     <input id="titleInput" placeholder="ノートのタイトル" />
     <input id="dateInput" type="date" title="ノートの日付(カレンダーの日付と同じ)">
-    <button class="swatch active" data-color="#20233F" style="background:#20233F"></button>
-    <button class="swatch" data-color="#33518F" style="background:#33518F"></button>
-    <button class="swatch" data-color="#9C3B3B" style="background:#9C3B3B"></button>
+    <button class="swatch active" data-color="--ink" style="background:var(--ink)"></button>
+    <button class="swatch" data-color="--ink-blue" style="background:var(--ink-blue)"></button>
+    <button class="swatch" data-color="--ink-red" style="background:var(--ink-red)"></button>
     <button class="swatch" data-color="#FFFFFF" style="background:#FFFFFF;border-color:var(--line);"></button>
     <input type="range" id="sizeRange" min="1" max="16" value="3">
     <button class="tbtn" id="eraserBtn">消しゴム</button>
@@ -249,7 +249,7 @@ let currentId = null;
 let strokes = [];
 let undone = [];
 let drawing = false;
-let currentColor = '#20233F';
+let currentColor = '--ink';
 let eraser = false;
 let saveTimer = null;
 let dirty = false;
@@ -283,7 +283,11 @@ function loadNotes(){
   try{
     const raw = localStorage.getItem(DB_KEY);
     notes = raw ? JSON.parse(raw) : [];
-    for(const n of notes){ if(!n.createdAt) n.createdAt = n.updatedAt || Date.now(); }
+    const LEGACY_COLOR_MAP = {'#20233F':'--ink', '#33518F':'--ink-blue', '#9C3B3B':'--ink-red', '#9C3B3C':'--ink-red'};
+    for(const n of notes){
+      if(!n.createdAt) n.createdAt = n.updatedAt || Date.now();
+      if(n.strokes){ for(const s of n.strokes){ if(LEGACY_COLOR_MAP[s.color]) s.color = LEGACY_COLOR_MAP[s.color]; } }
+    }
   }catch(e){ notes = []; }
 }
 function persist(){
@@ -333,6 +337,12 @@ function drawRuledLines(){
   }
   ctx.restore();
 }
+function resolveColor(c){
+  if(typeof c === 'string' && c.indexOf('--') === 0){
+    return getComputedStyle(document.documentElement).getPropertyValue(c).trim() || '#20233F';
+  }
+  return c;
+}
 function redrawStrokes(){
   const w = canvas.width/(window.devicePixelRatio||1), h = canvas.height/(window.devicePixelRatio||1);
   ctx.clearRect(0,0,w,h);
@@ -342,7 +352,7 @@ function redrawStrokes(){
     if(s.points.length < 1) continue;
     ctx.save();
     ctx.globalCompositeOperation = s.tool === 'eraser' ? 'destination-out' : 'source-over';
-    ctx.strokeStyle = s.color;
+    ctx.strokeStyle = resolveColor(s.color);
     ctx.lineWidth = s.size;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -356,7 +366,7 @@ function redrawStrokes(){
   for(const s of strokes){
     if(s.tool !== 'text') continue;
     textCtx.save();
-    textCtx.fillStyle = s.color;
+    textCtx.fillStyle = resolveColor(s.color);
     textCtx.font = (s.size||26) + "px 'Kalam', sans-serif";
     textCtx.textBaseline = 'top';
     textCtx.fillText(s.text, s.x, s.y);
