@@ -151,6 +151,13 @@ body{
 #visionModal p, #ocrModal p{font-size:0.85rem; color:var(--muted); font-family:system-ui,sans-serif; line-height:1.5;}
 #visionKeyInput{width:100%; padding:8px; font-family:system-ui,sans-serif; font-size:0.85rem; border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--text); margin:8px 0;}
 #visionModal .row, #ocrModal .row{display:flex; gap:8px; justify-content:flex-end; margin-top:12px;}
+#fullEditModal{position:fixed; inset:0; background:var(--paper); z-index:60; display:none; flex-direction:column;}
+#fullEditModal.open{display:flex;}
+.feBar{display:flex; align-items:center; gap:6px; padding:8px 10px; padding-top:calc(8px + env(safe-area-inset-top,0px)); border-bottom:1px solid var(--line); background:var(--paper-dark); flex-wrap:wrap;}
+.feFindBar{display:flex; gap:6px; padding:8px 10px; border-bottom:1px solid var(--line); background:var(--paper-dark); flex-wrap:wrap; align-items:center;}
+.feFindBar input{font-family:system-ui,sans-serif; font-size:0.85rem; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--text); flex:1 1 120px; min-width:0;}
+.feCount{font-family:system-ui,sans-serif; font-size:0.75rem; color:var(--muted); min-width:4em;}
+#feTextarea{flex:1; border:0; outline:none; resize:none; padding:20px clamp(16px,5vw,64px); background:var(--card); color:var(--text); font-family:'Kalam',sans-serif; font-size:20px; line-height:1.8;}
 </style>
 </head>
 <body>
@@ -177,6 +184,7 @@ body{
     <button class="tbtn" id="voiceBtn">🎤 音声入力</button>
     <button class="tbtn" id="textBtn">⌨️ テキスト入力</button>
     <button class="tbtn" id="textEditBtn">✎ 文字編集</button>
+    <button class="tbtn" id="fullEditBtn">📝 全画面で編集</button>
     <button class="tbtn" id="ocrBtn">🔤 活字に変換</button>
     <button class="tbtn" id="visionSettingsBtn">Vision設定</button>
     <button class="tbtn active" id="toggleInkBtn">✏️ 画像レイヤー</button>
@@ -230,6 +238,26 @@ body{
         <button class="tbtn active" id="visionModalSave">保存</button>
       </div>
     </div>
+  </div>
+  <div id="fullEditModal">
+    <div class="feBar">
+      <button class="tbtn" id="feClose">← 閉じる(保存しない)</button>
+      <button class="tbtn" id="feFindToggle">🔍 検索・置換</button>
+      <button class="tbtn" id="feFontMinus">A-</button>
+      <button class="tbtn" id="feFontPlus">A+</button>
+      <div class="spacer"></div>
+      <button class="tbtn active" id="feSave">この内容で保存</button>
+    </div>
+    <div id="feFindBar" class="feFindBar" hidden>
+      <input id="feFindInput" placeholder="検索語">
+      <span id="feCount" class="feCount"></span>
+      <button class="tbtn" id="fePrev">‹</button>
+      <button class="tbtn" id="feNext">›</button>
+      <input id="feReplaceInput" placeholder="置換後">
+      <button class="tbtn" id="feReplaceOne">置換</button>
+      <button class="tbtn" id="feReplaceAll">すべて置換</button>
+    </div>
+    <textarea id="feTextarea" spellcheck="false"></textarea>
   </div>
   <div id="ocrModal">
     <div class="box">
@@ -753,6 +781,104 @@ function selectCalDay(dayNotes, el, holiday, year, month, day){
   addBtn.addEventListener('click', ()=>{ createNoteForDate(year, month, day); calModal.classList.remove('open'); });
   calDayNotes.appendChild(addBtn);
 }
+
+// --- Full-screen text layer editor ---
+const fullEditModal = document.getElementById('fullEditModal');
+const feTextarea = document.getElementById('feTextarea');
+const feFindBar = document.getElementById('feFindBar');
+const feFindInput = document.getElementById('feFindInput');
+const feReplaceInput = document.getElementById('feReplaceInput');
+const feCount = document.getElementById('feCount');
+let feFontSize = 20;
+
+document.getElementById('fullEditBtn').addEventListener('click', ()=>{
+  if(!currentId) return;
+  const lines = strokes.filter(s=>s.tool==='text').sort((a,b)=>a.y-b.y).map(s=>s.text);
+  feTextarea.value = lines.join('\n');
+  feTextarea.style.fontSize = feFontSize + 'px';
+  feFindBar.hidden = true;
+  fullEditModal.classList.add('open');
+  feTextarea.focus();
+});
+document.getElementById('feClose').addEventListener('click', ()=> fullEditModal.classList.remove('open'));
+document.getElementById('feSave').addEventListener('click', ()=>{
+  strokes = strokes.filter(s => s.tool !== 'text');
+  let y = 60;
+  for(const line of feTextarea.value.split('\n')){
+    strokes.push({tool:'text', text: line, x:24, y, color: currentColor, size:26});
+    y += 36;
+  }
+  textCursorY = y;
+  afterTextAdded();
+  fullEditModal.classList.remove('open');
+});
+document.getElementById('feFontMinus').addEventListener('click', ()=>{
+  feFontSize = Math.max(12, feFontSize - 2);
+  feTextarea.style.fontSize = feFontSize + 'px';
+});
+document.getElementById('feFontPlus').addEventListener('click', ()=>{
+  feFontSize = Math.min(32, feFontSize + 2);
+  feTextarea.style.fontSize = feFontSize + 'px';
+});
+
+function feMatches(term){
+  if(!term) return [];
+  const text = feTextarea.value.toLowerCase();
+  term = term.toLowerCase();
+  const idxs = [];
+  let i = 0;
+  while((i = text.indexOf(term, i)) > -1){ idxs.push(i); i += term.length; }
+  return idxs;
+}
+function feSelectRange(s, e){ feTextarea.focus(); feTextarea.setSelectionRange(s, e); }
+function feJump(dir){
+  const term = feFindInput.value;
+  const ms = feMatches(term);
+  if(!ms.length){ feCount.textContent = term ? '0件' : ''; return; }
+  let target;
+  if(dir > 0){
+    target = ms.filter(m => m >= feTextarea.selectionEnd)[0];
+    if(target === undefined) target = ms[0];
+  } else {
+    const before = ms.filter(m => m < feTextarea.selectionStart);
+    target = before.length ? before[before.length-1] : ms[ms.length-1];
+  }
+  feSelectRange(target, target + term.length);
+  feCount.textContent = (ms.indexOf(target)+1) + '/' + ms.length;
+}
+document.getElementById('feFindToggle').addEventListener('click', ()=>{
+  feFindBar.hidden = !feFindBar.hidden;
+  if(!feFindBar.hidden){
+    const sel = feTextarea.value.slice(feTextarea.selectionStart, feTextarea.selectionEnd);
+    if(sel && sel.indexOf('\n') === -1) feFindInput.value = sel;
+    feFindInput.focus(); feFindInput.select();
+    feCount.textContent = feFindInput.value ? feMatches(feFindInput.value).length + '件' : '';
+  }
+});
+feFindInput.addEventListener('input', ()=>{
+  feCount.textContent = feFindInput.value ? feMatches(feFindInput.value).length + '件' : '';
+});
+feFindInput.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter'){ e.preventDefault(); feJump(e.shiftKey ? -1 : 1); }
+});
+document.getElementById('fePrev').addEventListener('click', ()=> feJump(-1));
+document.getElementById('feNext').addEventListener('click', ()=> feJump(1));
+document.getElementById('feReplaceOne').addEventListener('click', ()=>{
+  const term = feFindInput.value;
+  if(!term) return;
+  const s = feTextarea.selectionStart, e = feTextarea.selectionEnd;
+  if(e - s === term.length && feTextarea.value.slice(s, e).toLowerCase() === term.toLowerCase()){
+    feTextarea.setRangeText(feReplaceInput.value, s, e, 'end');
+  }
+  feJump(1);
+});
+document.getElementById('feReplaceAll').addEventListener('click', ()=>{
+  const term = feFindInput.value;
+  if(!term) return;
+  const re = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\$&'), 'gi');
+  feTextarea.value = feTextarea.value.replace(re, feReplaceInput.value);
+  feCount.textContent = '';
+});
 
 // --- Handwriting to print text (Vision API) ---
 const VISION_KEY_KEY = 'handnote_vision_api_key';
